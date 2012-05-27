@@ -1,0 +1,10 @@
+#ifndef OTSERVPP_MESSAGEPOOL_HPP_
+#define OTSERVPP_MESSAGEPOOL_HPP_
+
+
+class MessagePool{
+
+};
+
+
+#endif // OTSERVPP_MESSAGEPOOL_HPP_
