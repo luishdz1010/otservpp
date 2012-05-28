@@ -2,6 +2,7 @@
 #define OTSERVPP_CONNECTION_HPP_
 
 #include <deque>
+#include <glog/raw_logging.h>
 #include "forwarddcl.hpp"
 #include "networkdcl.hpp"
 #include "protocol/traits.hpp"
@@ -13,19 +14,24 @@ namespace otservpp{
  * else is delegated to the Protocol class bounded to the connection.
  *
  * Protocol concept requirements:
- * 	Protocol::connectionMade(Connection<Protocol>*)
- * 		A function taking a connection object, the given connection will outlive the
- * 		protocol object
- * 	Protocol::handleFirstMessage(IncomingMessage)
+ *  ProtocolTraitss<Protocol>::IncomingMessage Protocol::createIncomingMessage()
+ *  	Will be called during the construction of the connection object, it should return an
+ *  	empty message object that will be used for storing the incoming data.
+ * 	void Protocol::connectionMade(Connection<Protocol>*)
+ * 		Will be called right before ending the construction of the Connection object,
+ * 	    The connection will outlive the protocol object
+ * 	void Protocol::handleFirstMessage(ProtocolTraitss<P>::IncomingMessage[&])
  * 		Will be called when the first message arrives
- * 	void Protocol::handleMessage(IncomingMessage)
+ * 	void Protocol::handleMessage(ProtocolTraitss<P>::IncomingMessage[&])
  * 		Will be called when any subsequent message arrives
+ * 	std::string Protocol::getName()
+ * 		Should return a human readable id (without the " protocol" suffix)
  *
  * A specialization of trait template ProtocolTraits can be provided for customization.
  *  ProtocolTraitss<P>::IncomingMessage
- * 		A buffer type used to store incoming bytes from a remote peer.
+ * 		A message/buffer type used to store incoming bytes from the remote peer.
  * 	ProtocolTraitss<P>::OutgoingMessage
- * 		A buffer type used to store outgoing bytes to a remote peer
+ * 		A message/buffer type used to store outgoing bytes to a remote peer
  * 	int ProtocolTraitss<P>::readTimeout
  * 		Should be set to the time in seconds this connection will wait on read operations before
  * 		timing out
@@ -52,20 +58,14 @@ public:
 	{
 		LOG(INFO) << "connection made from " << peer.remote_endpoint();
 		// pass the connection to the protocol for storing,
-		// some protocols like game sends a packet right after connecting
+		// some protocols like game send a packet right after connecting
 		protocol.connectionMade(*this);
 	}
 
 	/// The connection is destroyed whenever an error occurs or a call to close() is made
 	~Connection()
 	{
-		try{
-			readTimer.cancel();
-			writeTimer.cancel();
-		}catch(std::exception& e){
-			LOG(ERROR) << "exception caught during destruction of Connection object. what: "
-					<< e.what();
-		}
+		assert(isStopped());
 	}
 
 	/// Starts listening for incoming data
@@ -75,33 +75,38 @@ public:
 	}
 
 	/// Closes the connection and stops any pending IO operation
-	void close()
+	void stop()
 	{
+		assert(!isStopped());
 		peer.shutdown(TcpSocket::shutdown_both);
 		peer.close();
 	}
 
-	bool isClosed()
+	bool isStopped()
 	{
 		return !peer.is_open();
 	}
 
 	/*! Sends a message to the remote peer asynchronously.
-	 * The given messagedwill be passed to this Protocol::OutgoingMessage constructor. An
+	 * The given message will be passed to this Protocol::OutgoingMessage constructor. An
 	 * outgoing message queue is maintained by this class in order to process messages
 	 * sequentially.
+	 * \note This functions is thread-safe
 	 */
 	template <class Message>
 	void send(Message&& msg)
 	{
-		bool shallSend = outMsgQueue.empty();
+		strand.dispatch([this, msg]{
+			if(!isStopped()) return;
 
-		outMsgQueue.emplace_back(std::forward<Message>(msg));
+			bool shallSend = outMsgQueue.empty();
 
-		if(shallSend)
-			doSend();
+			outMsgQueue.emplace_back(std::forward<Message>(msg));
+
+			if(shallSend)
+				doSend();
+		});
 	}
-
 
 	Connection(Connection&) = delete;
 	void operator=(Connection&) = delete;
@@ -129,15 +134,24 @@ private:
 
 		updateReadTimer();
 
+		// strand wrapping in asyncRead. note: this insider lambdas is needed for some reason in gcc
 		asyncRead(inMsg.getHeaderBuffer(), [=]{
 			this->updateReadTimer();
 
 			this->asyncRead(inMsg.parseHeaderAndGetBodyBuffer(), [this, t]{
 				inMsg.parseBody();
 
-				ProtocolHandler::sendInMsg(this);
+				try{
+					ProtocolHandler::sendInMsg(this);
+				}catch(std::exception& e){
+					LOG(ERROR) << "exception caught during " << protocol.getName()
+							<< " protocol execution, dropping connection. what: " << e.what();
+					return stop();
+				}
 
-				this->parseIncomingMessage<ProtocolMessageHandler>();
+				// stop maybe called from inside the handler
+				if(!isStopped())
+					this->parseIncomingMessage<ProtocolMessageHandler>();
 			});
 		});
 	}
@@ -146,20 +160,20 @@ private:
 	void updateReadTimer()
 	{
 		readTimer.expires_from_now(boost::posix_time::seconds(READ_TIMEOUT));
-		readTimer.async_wait([this](const SystemError &e){ this->abort(e); });
+		readTimer.async_wait(strand.wrap([this](const SystemError &e){ this->abort(e); }));
 	}
 
 	/// Helper function for async socket reading
 	template <class Buffer, class Lambda>
-	void asyncRead(Buffer& buffer, const Lambda& body)
+	void asyncRead(Buffer&& buffer, Lambda&& body)
 	{
-		boost::asio::async_read(peer, buffer,
-		[this, body](const SystemError& e, std::size_t bytesRead){
+		boost::asio::async_read(peer, std::forward<Buffer>(buffer),
+		strand.wrap([this, body](const SystemError& e, std::size_t bytesRead){
 			if(!e)
 				body();
 			else
 				this->abort(e);
-		});
+		}));
 	}
 
 	/// Called whenever an IO error or timeout occurs
@@ -167,17 +181,17 @@ private:
 	{
 		// timer.cancel() ends with operation_aborted, so we can reuse this function for timers
 		if(e != boost::asio::error::operation_aborted)
-			close();
+			stop();
 	}
 
 	/// Performs the actual send operation, one message at a time
 	void doSend()
 	{
 		writeTimer.expires_from_now(boost::posix_time::seconds(WRITE_TIMEOUT));
-		writeTimer.async_wait([this](const SystemError& e){ this->abort(e); });
+		writeTimer.async_wait(strand.wrap([this](const SystemError& e){ this->abort(e); }));
 
 		boost::asio::async_write(peer, boost::asio::buffer(outMsgQueue.front().getBuffer()),
-		[this](const SystemError& e) mutable{ // random lambda bug in gcc 4.7 fix
+		strand.wrap([this](const SystemError& e) mutable{ // random lambda bug in gcc 4.7 fix
 			if(!e){
 				writeTimer.cancel();
 
@@ -188,12 +202,13 @@ private:
 			} else {
 				this->abort(e);
 			}
-		});
+		}));
 	}
 
 
 	TcpSocket peer;
 	Protocol protocol;
+	boost::asio::strand strand {peer.get_io_service()};
 	boost::asio::deadline_timer readTimer {peer.get_io_service()};
 	boost::asio::deadline_timer writeTimer {peer.get_io_service()};
 	IncomingMessage inMsg {protocol.createIncomingMessage()};
