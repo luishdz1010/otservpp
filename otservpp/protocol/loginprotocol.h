@@ -1,7 +1,7 @@
 #ifndef OTSERVPP_LOGINPROTOCOL_H_
 #define OTSERVPP_LOGINPROTOCOL_H_
 
-#include "basic.hpp"
+#include "connection.hpp"
 #include "../message/standardinmessage.h"
 #include "traits.hpp"
 
@@ -25,7 +25,7 @@ struct LoginSharedData{
 };
 
 /// The standard tibia login protocol
-class LoginProtocol : public BasicProtocol<LoginProtocol> {
+class LoginProtocol : public Connection<LoginProtocol> {
 public:
 	enum{
 		Error = 0x0A,
@@ -35,14 +35,20 @@ public:
 
 	explicit LoginProtocol(LoginSharedData& data);
 
-	/// Returns a StandarInMessage with the same ChecksumMode as in the underlying
-	/// LoginSharedData::checksumMode
-	StandardInMessage createIncomingMessage();
+	static const char* getName()
+	{
+		return "standard login protocol";
+	}
 
+	/// Handles the login message. If the login succeed
+	/// LoginSharedData::loginSuccedHook(peerAddress, account) is called to obtain the
+	/// the login info.
 	void handleFirstMessage(StandardInMessage& msg);
 
 private:
-	void closeWithError(AccountLoginError errorCode);
+	/// Rejects the login attempt with an error code using the message provided from
+	/// LoginSharedData::loginFailedHook(peerAddress, error code[, account])
+	void closeWithError(AccountLoginError error, const AccountPtr& acc);
 
 	LoginSharedData& p;
 };

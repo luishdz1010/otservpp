@@ -6,7 +6,7 @@
 namespace otservpp{
 
 typedef boost::asio::ip::tcp::socket TcpSocket;
-typedef boost::system::error_code SystemError;
+typedef boost::system::error_code SystemErrorCode;
 
 }
 

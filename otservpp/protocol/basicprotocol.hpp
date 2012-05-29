@@ -1,23 +1,20 @@
 #ifndef OTSERVPP_BASICPROTOCOL_H_
 #define OTSERVPP_BASICPROTOCOL_H_
 
+#include "../connection.hpp"
+
 namespace otservpp {
 
 /*! Base class for protocols
  * Provides default/dummy functions required by Connection, every function can be statically
- * overridden, but if you do override connectionMade(Connection<Protocol>*) you must call it in
- * the overriding function like \code BasicProtocol<MyProtocol>::connectionMade(conn) \endcode
+ * overridden.
  */
 template <typename Protocol>
-class BasicProtocol {
+class BasicProtocol : public Connection<Protocol>{
 public:
-	BasicProtocol() = default;
-	BasicProtocol(BasicProtocol&&) = default;
-
-	void connectionMade(Connection<Protocol>* conn)
-	{
-		peer = conn;
-	}
+	BasicProtocol(boost::asio::ip::tcp::socket&& socket) :
+		Connection<Protocol>(socket.get_io_service(), std::move(socket))
+	{}
 
 	/// Should be implemented if the underlying protocol isn't a one-packet protocol
 	void handleMessage()
@@ -30,20 +27,6 @@ public:
 
 protected:
 	~BasicProtocol() = default;
-
-	Connection<Protocol>* getConnection()
-	{
-		return peer;
-	}
-
-	template <class Message>
-	void send(Message&& msg)
-	{
-		peer->send(std::forward<Message>(msg));
-	}
-
-private:
-	Connection<Protocol>* peer;
 };
 
 } /* namespace netvent */

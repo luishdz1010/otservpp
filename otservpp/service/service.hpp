@@ -25,7 +25,7 @@ public:
 
 	/// Called when a new connection arrives in Service::getPort()
 	/// \note Implementation must be thread safe
-	virtual void incomingConnection(TcpSocket) = 0;
+	virtual void incomingConnection(boost::asio::ip::tcp::socket&&) = 0;
 };
 
 template <class Protocol>
@@ -44,25 +44,22 @@ public:
 
 	const std::string& getName() const final override
 	{
-		static std::string name {ProtocolTraits<Protocol>::name(), " ", " service"};
+		static std::string name {Protocol::name(), " ", " service"};
 		return name;
 	}
 
-	void incomingConnection(TcpSocket socket) const final override
+	void incomingConnection(boost::asio::ip::tcp::socket&& socket) final override
 	{
-		auto conn = std::make_shared<Connection<Protocol>>(std::move(socket), makeProtocol());
-		conn.start(); // the connection lives by registering itself with the socket's io_service
-	}
-
-protected:
-	/// Override this in subclasses for custom protocol creation
-	/// \note Implementation must be thread safe
-	virtual Protocol makeProtocol()
-	{
-		return Protocol();
+		makeProtocol()->start();
 	}
 
 private:
+	/// Override for custom protocol creation
+	virtual std::shared_ptr<Protocol> makeProtocol(boost::asio::ip::tcp::socket&& socket)
+	{
+		return std::make_shared<Protocol>(socket.get_io_service(), std::move(socket));
+	}
+
 	uint16_t port;
 };
 

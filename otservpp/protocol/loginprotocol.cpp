@@ -14,16 +14,17 @@ StandardInMessage LoginProtocol::createIncomingMessage()
 
 void LoginProtocol::handleFirstMessage(StandardInMessage& msg)
 {
-	auto& conn = getConnection()->stopReceiving();
+	auto& conn = getConnection();
+	conn->stopReceiving();
 
 	p.getPeerState(conn->getPeerAddress(), [=, &msg](PeerState s){
 		switch(s){
 		case PeerState::Ok:
 			break;
-		case PeerState::Disabled:
-			return closeWithError(AccountLoginError::IpDisabled);
 		case PeerState::Banned:
 			return closeWithError(AccountLoginError::IpBanned);
+		case PeerState::Disabled:
+			return closeWithError(AccountLoginError::IpDisabled);
 		}
 
 		msg.skipBytes(1); // protocol id
@@ -31,7 +32,7 @@ void LoginProtocol::handleFirstMessage(StandardInMessage& msg)
 		if(p.validVersion(msg.getClientVersion()))
 			return closeWithError(AccountLoginError::BadClientVersion);
 
-		msg.decryptRSA();
+		msg.decryptRSA(); // ignore xtea key?
 
 		std::string accName = msg.getString();
 

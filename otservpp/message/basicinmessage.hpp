@@ -31,6 +31,7 @@ public:
 
 	uint8_t getByte()
 	{
+		assert(pos+1 <= buffer.size());
 		return buffer[pos++];
 	}
 
@@ -50,6 +51,7 @@ public:
 
 	void skipBytes(std::size_t b)
 	{
+		assert(pos+b <= buffer.size());
 		pos += b;
 	}
 
@@ -63,7 +65,7 @@ protected:
 	typename std::enable_if<std::is_arithmetic<T>::value, T>::type
 	get()
 	{
-		assert(pos < buffer.size());
+		assert(pos+sizeof(T) <= buffer.size());
 		return *(T*)(buffer.data() + ((pos+=sizeof(T))-sizeof(T)));
 	}
 
