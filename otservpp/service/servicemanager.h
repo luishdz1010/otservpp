@@ -7,11 +7,6 @@
 
 namespace otservpp {
 
-class DuplicatedServicePortException : public std::runtime_error{
-public:
-	DuplicatedServicePortException(const ServiceUniquePtr& s);
-};
-
 /*! Entry point of network connections.
  * This tiny class is used for dispatching new connections to their respective services.
  */
@@ -53,9 +48,10 @@ private:
 
 		ServiceUniquePtr service;
 		boost::asio::ip::tcp::acceptor acceptor;
-		TcpSocket peer;
+		boost::asio::ip::tcp::socket peer;
 	};
 
+	// TODO we don't need an u_map
 	typedef std::unordered_map<uint16_t, PrivateService> PortServiceMap;
 
 	/// Maintains the connection dispatching flow

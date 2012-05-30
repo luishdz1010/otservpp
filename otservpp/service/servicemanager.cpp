@@ -2,15 +2,10 @@
 #include <boost/lexical_cast.hpp>
 #include "service.hpp"
 
-using namespace boost::asio;
+using namespace std;
 using namespace boost::asio::ip;
 
 namespace otservpp {
-
-DuplicatedServicePortException::DuplicatedServicePortException(const ServiceUniquePtr& s) :
-	std::runtime_error("trying to register service " + s->getName() + " with a duplicated port "
-			+ boost::lexical_cast<std::string>(s->getPort()))
-{}
 
 ServiceManager::ServiceManager(boost::asio::io_service& ioService_) :
 	ioService(ioService_)
@@ -37,12 +32,14 @@ void ServiceManager::registerService(ServiceUniquePtr service_)
 	PrivateService service {std::move(service_), ioService};
 
 	if(serviceMap.emplace(service_->getPort(), std::move(service)).second)
-		throw DuplicatedServicePortException(service_);
+		throw runtime_error(
+			"trying to register service " + service_->getName() + " with a duplicated port "
+				+ boost::lexical_cast<string>(service_->getPort()));
 }
 
 void ServiceManager::acceptMore(PrivateService& svc)
 {
-	svc.acceptor.async_accept(svc.peer, [this, &svc](const SystemError& e){
+	svc.acceptor.async_accept(svc.peer, [this, &svc](const SystemErrorCode& e){
 		if(!e){
 			svc.service->incomingConnection(std::move(svc.peer));
 			acceptMore(svc);

@@ -1,9 +1,7 @@
 #ifndef OTSERVPP_LOGINPROTOCOL_H_
 #define OTSERVPP_LOGINPROTOCOL_H_
 
-#include "connection.hpp"
-#include "../message/standardinmessage.h"
-#include "traits.hpp"
+#include "standardprotocol.hpp"
 
 namespace otservpp {
 
@@ -25,7 +23,7 @@ struct LoginSharedData{
 };
 
 /// The standard tibia login protocol
-class LoginProtocol : public Connection<LoginProtocol> {
+class AccountLoginProtocol : public StandardProtocol{
 public:
 	enum{
 		Error = 0x0A,
@@ -33,22 +31,22 @@ public:
 		CharacterList = 0x64
 	};
 
-	explicit LoginProtocol(LoginSharedData& data);
+	explicit AccountLoginProtocol(LoginSharedData& data);
 
 	static const char* getName()
 	{
-		return "standard login protocol";
+		return "account login protocol";
 	}
 
 	/// Handles the login message. If the login succeed
 	/// LoginSharedData::loginSuccedHook(peerAddress, account) is called to obtain the
-	/// the login info.
+	/// the login info
 	void handleFirstMessage(StandardInMessage& msg);
 
 private:
 	/// Rejects the login attempt with an error code using the message provided from
 	/// LoginSharedData::loginFailedHook(peerAddress, error code[, account])
-	void closeWithError(AccountLoginError error, const AccountPtr& acc);
+	//void closeWithError(AccountLoginError error, const AccountPtr& acc = AccountPtr());
 
 	LoginSharedData& p;
 };

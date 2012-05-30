@@ -3,14 +3,13 @@
 
 #include "../forwarddcl.hpp"
 #include "../networkdcl.hpp"
-#include "../protocol/traits.hpp"
 
 namespace otservpp {
 
 /*! Represents a listener on a network port.
  * The ServiceManager class is responsible for the handling of new connections, services only
  * listen for them.
- * Every protocol is attached to a service, either by subclassing BasicService or Service.
+ * A protocol is attached to a service, either by subclassing BasicService or Service.
  */
 class Service{
 public:
@@ -28,9 +27,12 @@ public:
 	virtual void incomingConnection(boost::asio::ip::tcp::socket&&) = 0;
 };
 
+/// Common protocol base class
 template <class Protocol>
 class BasicService : public Service{
 public:
+	typedef ConnectionPtr<Protocol> ConnectionType;
+
 	BasicService(uint16_t port_) :
 		port(port_)
 	{}
@@ -50,14 +52,16 @@ public:
 
 	void incomingConnection(boost::asio::ip::tcp::socket&& socket) final override
 	{
-		makeProtocol()->start();
+		auto connection = make_shared<Connection<Protocol>>(std::move(socket));
+		auto protocol = makeProtocol(connection);
+		connection->start(protocol);
 	}
 
-private:
+protected:
 	/// Override for custom protocol creation
-	virtual std::shared_ptr<Protocol> makeProtocol(boost::asio::ip::tcp::socket&& socket)
+	virtual ProtocolPtr<Protocol> makeProtocol(const ConnectionType& connection)
 	{
-		return std::make_shared<Protocol>(socket.get_io_service(), std::move(socket));
+		return std::make_shared<Protocol>(connection);
 	}
 
 	uint16_t port;

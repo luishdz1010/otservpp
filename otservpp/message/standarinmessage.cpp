@@ -2,8 +2,7 @@
 
 namespace otservpp{
 
-StandardInMessage::StandardInMessage(ChecksumMode& mode) :
-		checksumMode(mode)
+StandardInMessage::StandardInMessage()
 {}
 
 boost::asio::mutable_buffers_1 StandardInMessage::parseHeaderAndGetBodyBuffer()
@@ -17,6 +16,7 @@ boost::asio::mutable_buffers_1 StandardInMessage::parseHeaderAndGetBodyBuffer()
 	return getBodyBuffer(bodySize);
 }
 
+/*
 void StandardInMessage::parseBody()
 {
 	if(checksumMode == ChecksumMode::Check){
@@ -33,18 +33,9 @@ uint16_t StandardInMessage::getClientVersion()
 	auto version = getU16();
 	skipBytes(12); // file checksum
 	return version;
-}
-
-StandardInMessage::decryptRSA()
-{
+}*/
 
 }
 
-StandardInMessage::decryptXTEA()
-{
-
-}
-
-}
 
 

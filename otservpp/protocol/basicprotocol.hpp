@@ -1,25 +1,39 @@
-#ifndef OTSERVPP_BASICPROTOCOL_H_
-#define OTSERVPP_BASICPROTOCOL_H_
+#ifndef OTSERVPP_BASICPROTOCOL_HPP_
+#define OTSERVPP_BASICPROTOCOL_HPP_
 
 #include "../connection.hpp"
 
 namespace otservpp {
 
-/*! Base class for protocols
- * Provides default/dummy functions required by Connection, every function can be statically
- * overridden.
+/*! Base class for most protocols
+ * A protocol represents the intentions of a remote peer by means of a Connection
  */
 template <typename Protocol>
-class BasicProtocol : public Connection<Protocol>{
+class BasicProtocol{
 public:
-	BasicProtocol(boost::asio::ip::tcp::socket&& socket) :
-		Connection<Protocol>(socket.get_io_service(), std::move(socket))
+	typedef ConnectionPtr<Protocol> ConnectionPtrType;
+
+	BasicProtocol(const ConnectionPtrType& conn) :
+		connection(conn)
 	{}
 
 	/// Should be implemented if the underlying protocol isn't a one-packet protocol
-	void handleMessage()
+	void handleMessage(const ProtocolTraits<Protocol>::IncomingMessage&)
 	{
 		assert(false);
+	}
+
+	/// Overrides must call this base implementation,
+	void connectionLost()
+	{
+		detachConnection();
+	}
+
+	/// This breaks the cyclic dependency on connection and protocol, preventing an otherwise
+	/// nasty memory leak.
+	void detachConnection()
+	{
+		connection.reset();
 	}
 
 	BasicProtocol(BasicProtocol&) = delete;
@@ -27,8 +41,10 @@ public:
 
 protected:
 	~BasicProtocol() = default;
+
+	ConnectionPtrType connection;
 };
 
-} /* namespace netvent */
+} /* namespace otservpp */
 
-#endif // OTSERVPP_BASICPROTOCOL_H_
+#endif // OTSERVPP_BASICPROTOCOL_HPP_

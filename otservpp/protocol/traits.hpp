@@ -5,18 +5,29 @@
 
 namespace otservpp {
 
-/// See connection.hpp for explanation
+/*! Protocol configuration traits
+ * A specialization of trait template ProtocolTraits can be provided for Connection
+ * customization
+ */
 template <typename Protocol>
 struct ProtocolTraits{
+	/// A message/buffer type used to store incoming bytes from the remote peer
 	typedef StandardInMessage IncomingMessage;
+
+	/// A message/buffer type used to store outgoing bytes to the remote peer
 	typedef StandardOutMessage OutgoingMessage;
 
 	enum{
-		readTimeOut  = 30,
-		writeTimeOut = 30
-	};
+		/*! Should be set to the time in seconds this connection will wait on read operations
+		 * before timing out
+		 */
+		ReadTimeOut  = 30,
 
-	static const char* name(){ return "unnamed protocol"; }
+		/*! Should be set to the time in seconds this connection will wait on write operations
+		 * before timing out
+		 */
+		WriteTimeOut = 30  ///<
+	};
 };
 
 } /* namespace otservpp */
