@@ -7,6 +7,7 @@
 #include "../forwarddcl.hpp"
 #include "../networkdcl.hpp"
 #include "traits.hpp"
+#include <bitset>
 
 namespace otservpp{
 
@@ -60,8 +61,8 @@ public:
 	typedef typename TypeTraits::OutgoingMessage OutgoingMessage;
 
 	enum{
-		ReadTimeout  = TypeTraits::ReadTimeOut,
-		WriteTimeout = TypeTraits::WriteTimeOut
+		ReadTimeOut  = TypeTraits::ReadTimeOut,
+		WriteTimeOut = TypeTraits::WriteTimeOut
 	};
 
 	/*! Creates a connection with the given socket representing the remote peer
@@ -120,8 +121,8 @@ public:
 	/// Starts listening for incoming data passing all completed messages to the given protocol
 	void start(const ProtocolPtr& p)
 	{
-		DVLOG(1) << "starting reading" << logInfo();
 		protocol = p;
+		DVLOG(1) << "starting reading" << logInfo();
 		parseIncomingMessage<ProtocolFirstMessageHandler>();
 	}
 
@@ -131,12 +132,10 @@ public:
 	{
 		closeStatus = ReadClosed | WriteClosed;
 		impl->strand.dispatch([this]{
-			assert(!isStopped()); // TODO remove this if necessary
-			VLOG(1) << "stopping connection" << logInfo();
-
-			impl->peer.shutdown(TcpSocket::shutdown_both);
+			VLOG(1) << "stopping connection" << this->logInfo();
 			impl->readTimer.cancel();
 			impl->writeTimer.cancel();
+			impl->peer.shutdown(TcpSocket::shutdown_both);
 			impl->peer.close();
 			protocol.reset();
 		});
@@ -206,10 +205,12 @@ public:
 private:
 	using std::enable_shared_from_this<Connection>::shared_from_this;
 
-	std::ostrstream logInfo()
+	const char* logInfo()
 	{
-		return std::ostrstream() << " on " << getPeerAddress() << " with "
+		std::ostrstream s;
+		s << " on " << getPeerAddress() << " with "
 				<< (protocol? protocol->getName() : "no protocol");
+		 return s.str();
 	}
 
 	/// Helper for dispatching the first messages to the protocol
@@ -235,15 +236,15 @@ private:
 
 		// strand wrapping is in asyncRead.
 		// note: 'this->func(x)' inside lambdas is needed for some reason in gcc
-		asyncRead(inMsg.getHeaderBuffer(), [=]{
+		asyncRead(inMsg.getHeaderBuffer(), [=](){
 			this->updateReadTimer();
 
-			this->asyncRead(inMsg.parseHeaderAndGetBodyBuffer(), [=]{
+			this->asyncRead(inMsg.parseHeaderAndGetBodyBuffer(), [=](){
 				assert(sthis);
 				impl->readTimer.cancel();
 				inMsg.parseBody();
 
-				DVLOG(1) << "handling message " << inMsg << logInfo();
+				//DVLOG(1) << "handling message " << inMsg << this->logInfo();
 
 				try{
 					ProtocolHandler::sendInMsg(this);
@@ -251,44 +252,13 @@ private:
 					LOG(ERROR) << "exception caught during "
 							<< (protocol? protocol->getName() : "no protocol")
 							<< " execution, dropping connection. What: " << e.what();
-					return stop();
+					return this->stop();
 				}
 
-				// stop may be called from inside the handler
-				if(!this->isStopped())
+				if(this->isReceiving())
 					this->parseIncomingMessage<ProtocolMessageHandler>();
 			});
 		});
-	}
-
-	/// Keeps the read timer alive
-	void updateReadTimer()
-	{
-		impl->readTimer.expires_from_now(boost::posix_time::seconds(ReadTimeout));
-		waitOnReadTimer();
-	}
-
-	void waitOnReadTimer()
-	{
-		impl->readTimer.async_wait(impl->strand.wrap([this](const SystemErrorCode &e){
-			DLOG(ERROR) << "read operation timedout after " << ReadTimeout << "s" << logInfo();
-			this->abort(e);
-		}));
-	}
-
-	/// Keeps the write timer alive
-	void updateWriteTimer()
-	{
-		impl->writeTimer.expires_from_now(boost::posix_time::seconds(WriteTimeout));
-		waitOnWriteTimer();
-	}
-
-	void waitOnWriteTimer()
-	{
-		impl->writeTimer.async_wait(impl->strand.wrap([this](const SystemErrorCode &e){
-			DLOG(ERROR) << "write operation timedout after " << WriteTimeout << "s" <<logInfo();
-			this->abort(e);
-		}));
 	}
 
 	/// Helper function for async socket reading
@@ -298,16 +268,48 @@ private:
 		boost::asio::async_read(impl->peer, std::forward<Buffer>(buffer),
 		impl->strand.wrap([this, body](const SystemErrorCode& e, std::size_t bytesRead){
 			if(!e){
-				if(this->isStopped()) return;
+				if(!this->isReceiving()) return;
 
-				DVLOG(1) << bytesRead << " bytes read" << logInfo();
+				DVLOG(1) << bytesRead << " bytes read" << this->logInfo();
 
 				body();
 			} else {
-				DLOG(ERROR) << "read error " << e << " after " << bytesRead << " bytes read"
-						<<  logInfo();
+				DLOG_IF(ERROR, e != boost::asio::error::operation_aborted) << "read error "
+						<< e << " after " << bytesRead << " bytes read" <<  this->logInfo();
 				this->abort(e);
 			}
+		}));
+	}
+
+	/// Keeps the read timer alive
+	void updateReadTimer()
+	{
+		impl->readTimer.expires_from_now(boost::posix_time::seconds(ReadTimeOut));
+		waitOnReadTimer();
+	}
+
+	void waitOnReadTimer()
+	{
+		impl->readTimer.async_wait(impl->strand.wrap([this](const SystemErrorCode &e){
+			DLOG_IF(ERROR, e != boost::asio::error::operation_aborted)
+				<< "read operation timedout after " << ReadTimeOut << "s" << this->logInfo();
+			this->abort(e);
+		}));
+	}
+
+	/// Keeps the write timer alive
+	void updateWriteTimer()
+	{
+		impl->writeTimer.expires_from_now(boost::posix_time::seconds(WriteTimeOut));
+		waitOnWriteTimer();
+	}
+
+	void waitOnWriteTimer()
+	{
+		impl->writeTimer.async_wait(impl->strand.wrap([this](const SystemErrorCode &e){
+			DLOG_IF(ERROR, e != boost::asio::error::operation_aborted)
+				<< "write operation timedout after " << WriteTimeOut << "s" << this->logInfo();
+			this->abort(e);
 		}));
 	}
 
@@ -356,8 +358,8 @@ private:
 				then(); // keepSending() or close(), see send/sendAndClose
 
 			} else {
-				DLOG(ERROR) << "write error " << e << " after " << bytesWritten << " bytes written"
-						<< logInfo();
+				DLOG_IF(ERROR, e != boost::asio::error::operation_aborted) << "write error "
+					<< e << " after " << bytesWritten << " bytes written" << logInfo();
 				this->abort(e);
 			}
 		}));
@@ -375,10 +377,11 @@ private:
 	IncomingMessage inMsg;
 	std::deque<OutgoingMessage> outMsgQueue;
 	ProtocolPtr protocol;
-	std::atomic_int closeStatus {0};
+	//std::atomic_int closeStatus {0};
 
-	// generic types
 	std::unique_ptr<ConnectionImpl> impl;
+
+	char closeStatus {0};
 };
 
 } /* namespace otservpp */

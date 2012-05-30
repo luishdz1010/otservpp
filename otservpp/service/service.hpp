@@ -14,7 +14,7 @@ namespace otservpp {
 class Service{
 public:
 	Service() = default;
-	virtual ~Service() = default;
+	virtual ~Service(){}
 
 	/// Human readable name of the service, used for logging proposes
 	virtual const std::string& getName() const = 0;
@@ -37,7 +37,7 @@ public:
 		port(port_)
 	{}
 
-	~BasicService() = default;
+	~BasicService(){}
 
 	uint16_t getPort() const final override
 	{
@@ -46,7 +46,7 @@ public:
 
 	const std::string& getName() const final override
 	{
-		static std::string name {Protocol::name(), " ", " service"};
+		static std::string name = std::string(Protocol::getName()) + " service";
 		return name;
 	}
 

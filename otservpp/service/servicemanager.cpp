@@ -27,21 +27,20 @@ void ServiceManager::start()
 	}
 }
 
-void ServiceManager::registerService(ServiceUniquePtr service_)
+void ServiceManager::registerService(ServiceUniquePtr&& svc)
 {
-	PrivateService service {std::move(service_), ioService};
+	ServiceUniquePtr::pointer svcp = svc.get();
 
-	if(serviceMap.emplace(service_->getPort(), std::move(service)).second)
-		throw runtime_error(
-			"trying to register service " + service_->getName() + " with a duplicated port "
-				+ boost::lexical_cast<string>(service_->getPort()));
+	if(!serviceMap.insert(make_pair(svcp->getPort(), PrivateService(move(svc), ioService))).second)
+		throw runtime_error("trying to register service " + svcp->getName()
+				+ " with a duplicated port " + boost::lexical_cast<string>(svcp->getPort()));
 }
 
 void ServiceManager::acceptMore(PrivateService& svc)
 {
 	svc.acceptor.async_accept(svc.peer, [this, &svc](const SystemErrorCode& e){
 		if(!e){
-			svc.service->incomingConnection(std::move(svc.peer));
+			svc.service->incomingConnection(move(svc.peer));
 			acceptMore(svc);
 		} else{
 			throw boost::system::system_error(e);

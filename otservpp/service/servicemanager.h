@@ -1,9 +1,10 @@
 #ifndef OTSERVPP_SERVICEMANAGER_H_
 #define OTSERVPP_SERVICEMANAGER_H_
 
-#include <unordered_map>
+#include <map>
 #include "../networkdcl.hpp"
 #include "../forwarddcl.hpp"
+#include "service.hpp"
 
 namespace otservpp {
 
@@ -28,7 +29,7 @@ public:
 	 * \warning Services can only be registered at startup time
 	 */
 	// TODO add support for late registering of services in multithreaded context
-	void registerService(ServiceUniquePtr service);
+	void registerService(ServiceUniquePtr&& service);
 
 	ServiceManager(ServiceManager&) = delete;
 	void operator=(ServiceManager&) = delete;
@@ -42,8 +43,6 @@ private:
 			peer(ioService)
 		{}
 
-		// FIXME find a way to make this move only
-		//PrivateService(PrivateService&) = delete;
 		PrivateService(PrivateService&&) = default;
 
 		ServiceUniquePtr service;
@@ -51,8 +50,7 @@ private:
 		boost::asio::ip::tcp::socket peer;
 	};
 
-	// TODO we don't need an u_map
-	typedef std::unordered_map<uint16_t, PrivateService> PortServiceMap;
+	typedef std::map<uint16_t, PrivateService> PortServiceMap;
 
 	/// Maintains the connection dispatching flow
 	void acceptMore(PrivateService& svc);

@@ -1,4 +1,5 @@
 #include "standardinmessage.h"
+#include <boost/lexical_cast.hpp>
 
 namespace otservpp{
 
@@ -7,7 +8,8 @@ StandardInMessage::StandardInMessage()
 
 boost::asio::mutable_buffers_1 StandardInMessage::parseHeaderAndGetBodyBuffer()
 {
-	int bodySize = getU16();
+	//int bodySize = getU16();
+	int bodySize = boost::lexical_cast<int>((char)getByte());
 
 	// 5 = checksumsize + 1 byte smallest packet, TODO if this correct?
 	if(bodySize < 5 || bodySize > STANDARD_IN_MESSAGE_MAX_BODY_SIZE)
