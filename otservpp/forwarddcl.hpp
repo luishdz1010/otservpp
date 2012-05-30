@@ -52,7 +52,7 @@ typedef std::shared_ptr<IntervalTask> IntervalTaskPtr;
 class LoginProtocol;
 
 template <class Protocol>
-using ProtocolPtr = std::shared_ptr<Protocol>
+using ProtocolPtr = std::shared_ptr<Protocol>;
 
 } /* namespace otservpp */
 

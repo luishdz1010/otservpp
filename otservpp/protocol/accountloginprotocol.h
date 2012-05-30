@@ -23,7 +23,7 @@ struct LoginSharedData{
 };
 
 /// The standard tibia login protocol
-class AccountLoginProtocol : public StandardProtocol{
+class AccountLoginProtocol : public StandardProtocol<AccountLoginProtocol>{
 public:
 	enum{
 		Error = 0x0A,
@@ -31,7 +31,10 @@ public:
 		CharacterList = 0x64
 	};
 
-	explicit AccountLoginProtocol(LoginSharedData& data);
+	explicit AccountLoginProtocol(const ConnectionPtrType& conn, LoginSharedData& data) :
+		StandardProtocol(conn),
+		p(data)
+	{}
 
 	static const char* getName()
 	{

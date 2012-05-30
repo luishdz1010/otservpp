@@ -6,7 +6,7 @@
 #include <glog/logging.h>
 #include "../forwarddcl.hpp"
 #include "../networkdcl.hpp"
-#include "protocol/traits.hpp"
+#include "traits.hpp"
 
 namespace otservpp{
 
@@ -130,7 +130,7 @@ public:
 	void stop()
 	{
 		closeStatus = ReadClosed | WriteClosed;
-		impl->strand.dispatch([]{
+		impl->strand.dispatch([this]{
 			assert(!isStopped()); // TODO remove this if necessary
 			VLOG(1) << "stopping connection" << logInfo();
 
@@ -208,18 +208,18 @@ private:
 
 	std::ostrstream logInfo()
 	{
-		return std::ostrstream() << " on " << getRemoteEndpoint() << " with "
+		return std::ostrstream() << " on " << getPeerAddress() << " with "
 				<< (protocol? protocol->getName() : "no protocol");
 	}
 
 	/// Helper for dispatching the first messages to the protocol
 	struct ProtocolFirstMessageHandler{
-		static void sendInMsg(Connection* c){ c->protocol->handleFirstMessage(inMsg); };
+		static void sendInMsg(Connection* c){ c->protocol->handleFirstMessage(c->inMsg); };
 	};
 
 	/// Helper for dispatching subsequent messages to the protocol
 	struct ProtocolMessageHandler{
-		static void sendInMsg(Connection* c){ c->protocol->handleMessage(inMsg); };
+		static void sendInMsg(Connection* c){ c->protocol->handleMessage(c->inMsg); };
 	};
 
 	/*! Constructs a incoming message and call its respective protocol handler.
@@ -324,7 +324,7 @@ private:
 	template <class Message, class AfterSend>
 	void trySendOrEnqueueThen(Message&& msg, AfterSend&& then)
 	{
-		strand.dispatch([=]{
+		impl->strand.dispatch([=]{
 			if(!isSendind()) return;
 
 			DVLOG(1) << "queuing message " << outMsgQueue.front() << logInfo();

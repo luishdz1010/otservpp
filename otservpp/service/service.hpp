@@ -52,7 +52,7 @@ public:
 
 	void incomingConnection(boost::asio::ip::tcp::socket&& socket) final override
 	{
-		auto connection = make_shared<Connection<Protocol>>(std::move(socket));
+		auto connection = std::make_shared<Connection<Protocol>>(std::move(socket));
 		auto protocol = makeProtocol(connection);
 		connection->start(protocol);
 	}

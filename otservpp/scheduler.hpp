@@ -62,7 +62,7 @@ protected:
 	schedule(int ms, const TaskWrapperPtr& sthis, Func&& fn)
 	{
 		expiresFromNow(ms);
-		timer.async_wait([sthis, fn](const SystemError& e) mutable { fn(e); });
+		timer.async_wait([sthis, fn](const SystemErrorCode& e) mutable { fn(e); });
 	}
 
 	template <class Func, class TaskWrapperPtr>
@@ -71,7 +71,7 @@ protected:
 	{
 		expiresFromNow(ms);
 		auto dthis = sthis.get();
-		timer.async_wait([dthis, sthis, fn](const SystemError& e) mutable { fn(e, dthis); });
+		timer.async_wait([dthis, sthis, fn](const SystemErrorCode& e) mutable { fn(e, dthis); });
 	}
 
 	void expiresFromNow(int ms)
@@ -87,14 +87,14 @@ protected:
  * The deferred task will be executed when the given time expires, after that, if there aren't
  * more objects holding a reference to the same task, it is deleted.
  *
- * The signature of every task must be either void task(const SystemError& e) or
- * void task(const SystemError& e, DeferredTask* _this).
+ * The signature of every task must be either void task(const SystemErrorCode& e) or
+ * void task(const SystemErrorCode& e, DeferredTask* _this).
  */
 class DeferredTask :
 	public BaseDeferredTask, public std::enable_shared_from_this<DeferredTask>{
 public:
-	typedef void(*Unary)(const SystemError&);
-	typedef void(*Binary)(const SystemError&, DeferredTask*);
+	typedef void(*Unary)(const SystemErrorCode&);
+	typedef void(*Binary)(const SystemErrorCode&, DeferredTask*);
 
 	template <class... Args>
 	friend DeferredTaskPtr makeDeferredTask(boost::asio::io_service& ioService, Args&&... args);
@@ -130,19 +130,19 @@ inline DeferredTaskPtr makeDeferredTask(boost::asio::io_service& ioService, Args
 class IntervalTask :
 	public BaseDeferredTask, public std::enable_shared_from_this<IntervalTask>{
 public:
-	typedef void(*Unary)(const SystemError&);
-	typedef void(*Binary)(const SystemError&, IntervalTask*);
+	typedef void(*Unary)(const SystemErrorCode&);
+	typedef void(*Binary)(const SystemErrorCode&, IntervalTask*);
 	typedef std::function<std::remove_pointer<Binary>::type> TaskStorage;
 
 
 	/// Constructs an IntervalTask with the given millisec interval and task in the form:
-	/// void task(const SystemError& e, IntervalTask*)
+	/// void task(const SystemErrorCode& e, IntervalTask*)
 	template <class Func, class std::enable_if<function_traits<Func>::arity == 2, int>::type = 0>
 	IntervalTask(boost::asio::io_service& ioService, int millisec, Func&& func) :
 		BaseDeferredTask(ioService),
 		ms(millisec),
 		// interval logic
-		fn([func](const SystemError& e, IntervalTask* this_) mutable {
+		fn([func](const SystemErrorCode& e, IntervalTask* this_) mutable {
 			if(!e || e != boost::asio::error::operation_aborted)
 				this_->reschedule();
 			func(e, this_);
@@ -150,11 +150,11 @@ public:
 	{}
 
 	/// Constructs an IntervalTask with the given millisec interval and task in the form:
-	/// void task(const SystemError& e)
+	/// void task(const SystemErrorCode& e)
 	template <class Func, class std::enable_if<function_traits<Func>::arity == 1, int>::type = 0>
 	IntervalTask(boost::asio::io_service& ioService, int millisec, Func&& func) :
 		IntervalTask(ioService, millisec,
-			[func](const SystemError& e, IntervalTask* _) mutable { func(e); })
+			[func](const SystemErrorCode& e, IntervalTask* _) mutable { func(e); })
 	{}
 
 	/// Starts the execution of the bounded task
@@ -221,6 +221,8 @@ class Scheduler {
 				threadPool.create_thread(
 						boost::bind(&boost::asio::io_service::run, &workerIoService));
 		}
+
+		void shutdown_service() override {}
 
 		~ParallelExecutionService()
 		{
@@ -305,7 +307,7 @@ private:
 			func(std::forward<Func>(f))
 		{}
 
-		void operator()(const SystemError& e)
+		void operator()(const SystemErrorCode& e)
 		{
 			if(!e)
 				func();

@@ -23,7 +23,7 @@ public:
 		return boost::asio::buffer(buffer.data(), HEADER_SIZE);
 	}
 
-	boost::asio::mutable_buffers_1& getBodyBuffer(std::size_t bodySize)
+	boost::asio::mutable_buffers_1 getBodyBuffer(std::size_t bodySize)
 	{
 		assert(bodySize < MAX_BODY_SIZE);
 		return boost::asio::buffer(buffer.data()+HEADER_SIZE, bodySize);

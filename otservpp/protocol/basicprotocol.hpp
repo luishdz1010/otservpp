@@ -1,7 +1,7 @@
 #ifndef OTSERVPP_BASICPROTOCOL_HPP_
 #define OTSERVPP_BASICPROTOCOL_HPP_
 
-#include "../connection.hpp"
+#include "connection.hpp"
 
 namespace otservpp {
 
@@ -18,7 +18,7 @@ public:
 	{}
 
 	/// Should be implemented if the underlying protocol isn't a one-packet protocol
-	void handleMessage(const ProtocolTraits<Protocol>::IncomingMessage&)
+	void handleMessage(const typename ProtocolTraits<Protocol>::IncomingMessage&)
 	{
 		assert(false);
 	}

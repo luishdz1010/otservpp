@@ -6,10 +6,6 @@ namespace otservpp {
 
 using namespace hook;
 
-AccountLoginProtocol::AccountLoginProtocol(LoginSharedData& data) :
-	p(data)
-{}
-
 void AccountLoginProtocol::handleFirstMessage(StandardInMessage& msg)
 {
 	/*connection->stopReceiving();

@@ -19,7 +19,7 @@ void ServiceManager::start()
 		tcp::endpoint endpoint {tcp::v4(), portNService.first};
 
 		acceptor.open(endpoint.protocol());
-		acceptor.set_option(socket_base::reuse_address(true));
+		acceptor.set_option(boost::asio::socket_base::reuse_address(true));
 		acceptor.bind(endpoint);
 		acceptor.listen();
 

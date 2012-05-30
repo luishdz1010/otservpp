@@ -10,7 +10,7 @@ boost::asio::mutable_buffers_1 StandardInMessage::parseHeaderAndGetBodyBuffer()
 	int bodySize = getU16();
 
 	// 5 = checksumsize + 1 byte smallest packet, TODO if this correct?
-	if(bodySize < 5 || bodySize > STANDAR_IN_MESSAGE_BODY_SIZE)
+	if(bodySize < 5 || bodySize > STANDARD_IN_MESSAGE_MAX_BODY_SIZE)
 		throw std::runtime_error("invalid packet length size, dropping");
 
 	return getBodyBuffer(bodySize);
