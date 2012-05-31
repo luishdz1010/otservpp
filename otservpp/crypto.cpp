@@ -68,9 +68,9 @@ Rsa::Rsa(const char* n, const char* e, const char* d, const char* p, const char*
 			(BN_dec2bn(&rsa->e, e)?
 			(BN_dec2bn(&rsa->d, d)?
 			(BN_dec2bn(&rsa->p, p)?
-			 BN_dec2bn(&rsa->p, p):0):0):0):0;
+			 BN_dec2bn(&rsa->q, q):0):0):0):0;
 
-	if(!ok || RSA_check_key(rsa) != 0){
+	if(!ok || RSA_check_key(rsa) < 1){
 		ERR_load_crypto_strings();
 		throw std::runtime_error(ERR_error_string(ERR_get_error(), nullptr));
 	}
@@ -83,7 +83,7 @@ Rsa::~Rsa()
 
 std::size_t Rsa::decrypt(uint8_t* buffer, std::size_t lenght)
 {
-	int newLen = RSA_private_decrypt(lenght, buffer, buffer, rsa, RSA_NO_PADDING);
+	int newLen = RSA_private_decrypt((int)lenght, buffer, buffer, rsa, RSA_NO_PADDING);
 
 	if(newLen == -1)
 		throw std::runtime_error(ERR_error_string(ERR_get_error(), nullptr));

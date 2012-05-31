@@ -107,10 +107,18 @@ protected:
 		return reinterpret_cast<T*>(buffer.data() + (pos-bytes));
 	}
 
-	void movePos(uint bytesRequired)
+	void movePos(uint bytes)
 	{
-		if((pos+=bytesRequired) > size)
+		if((pos+=bytes) > size)
 			throwBufferException();
+	}
+
+	uint8_t* peekRawChunck(uint bytes)
+	{
+		if(pos+bytes > size)
+			throwBufferException();
+		else
+			return buffer.data() + pos;
 	}
 
 	void throwBufferException()
@@ -120,6 +128,7 @@ protected:
 
 	void setRemainingSize(uint bytes)
 	{
+		assert(pos+bytes <= MAX_BODY_SIZE);
 		size = pos+bytes;
 	}
 
