@@ -5,6 +5,29 @@
 
 namespace otservpp { namespace crypto{
 
+boost::asio::io_service::id CryptoService::id;
+
+ErrorCategory::ErrorCategory()
+{
+	ERR_load_crypto_strings();
+}
+
+const char* ErrorCategory::name() const
+{
+	return "crypto";
+}
+
+std::string ErrorCategory::message(int e) const
+{
+	return ERR_error_string(e, nullptr);
+}
+
+const boost::system::error_category& errorCategory()
+{
+	static ErrorCategory c;
+	return c;
+}
+
 Xtea::Xtea(uint32_t k0, uint32_t k1, uint32_t k2, uint32_t k3) :
 	key{k0, k1, k2, k3}
 {}
@@ -61,8 +84,10 @@ void Xtea::encrypt(uint32_t* buffer, std::size_t lenght)
 }
 
 
-Rsa::Rsa(const char* n, const char* e, const char* d, const char* p, const char* q) :
-	rsa(RSA_new())
+Rsa::Rsa(boost::asio::io_service& ioService,
+		 const char* n, const char* e, const char* d, const char* p, const char* q) :
+	rsa(RSA_new()),
+	svc(boost::asio::use_service<CryptoService>(ioService))
 {
 	int ok = BN_dec2bn(&rsa->n, n)?
 			(BN_dec2bn(&rsa->e, e)?
@@ -71,8 +96,8 @@ Rsa::Rsa(const char* n, const char* e, const char* d, const char* p, const char*
 			 BN_dec2bn(&rsa->q, q):0):0):0):0;
 
 	if(!ok || RSA_check_key(rsa) < 1){
-		ERR_load_crypto_strings();
-		throw std::runtime_error(ERR_error_string(ERR_get_error(), nullptr));
+		RSA_free(rsa);
+		throw boost::system::system_error(ERR_get_error(), errorCategory());
 	}
 }
 
@@ -81,12 +106,12 @@ Rsa::~Rsa()
 	RSA_free(rsa);
 }
 
-std::size_t Rsa::decrypt(uint8_t* buffer, std::size_t lenght)
+int Rsa::decrypt(uint8_t* buffer, std::size_t length, boost::system::error_condition& e)
 {
-	int newLen = RSA_private_decrypt((int)lenght, buffer, buffer, rsa, RSA_NO_PADDING);
+	int newLen = RSA_private_decrypt((int)length, buffer, buffer, rsa, RSA_NO_PADDING);
 
 	if(newLen == -1)
-		throw std::runtime_error(ERR_error_string(ERR_get_error(), nullptr));
+		e.assign(ERR_get_error(), errorCategory());
 
 	return newLen;
 }

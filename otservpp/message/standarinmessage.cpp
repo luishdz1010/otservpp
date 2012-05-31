@@ -34,13 +34,8 @@ uint16_t StandardInMessage::getClientVersion()
 	return getU16();
 }
 
-crypto::Xtea StandardInMessage::rsaDecrypt(crypto::Rsa& rsa)
+crypto::Xtea StandardInMessage::getXtea()
 {
-	setRemainingSize((uint)rsa.decrypt(peekRawChunck(128), 128));
-
-	if(getByte() != 0)
-		throw std::runtime_error("rsa decryption failed");
-
 	return {getU32(), getU32(), getU32(), getU32()};
 }
 

@@ -33,20 +33,20 @@ public:
 	}
 
 	/// Returns the total size of the message (header + body)
-	uint getSize()
+	uint getSize() const
 	{
 		return size;
 	}
 
 	/// Returns the remaining size of the message (size - readpos)
-	uint getRemainingSize()
+	uint getRemainingSize() const
 	{
 		assert(size >= pos);
 		return size-pos;
 	}
 
 	/// Returns true if getRemainingSize() >= bytesRequired
-	bool isAvailable(uint bytesRequired)
+	bool isAvailable(uint bytesRequired) const
 	{
 		return pos+bytesRequired <= size;
 	}
@@ -121,7 +121,7 @@ protected:
 			return buffer.data() + pos;
 	}
 
-	void throwBufferException()
+	void throwBufferException() const
 	{
 		throw std::out_of_range("attempt to overrun the incoming message buffer");
 	}

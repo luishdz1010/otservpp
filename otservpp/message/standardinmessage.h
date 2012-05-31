@@ -29,17 +29,33 @@ public:
 	 */
 	void parseBody();
 
+	/// Extracts a string
 	std::string getString();
 
-	/// Extracts the client version from the message
+	/// Extracts the client's version
 	uint16_t getClientVersion();
 
-	/// Decrypts the message using the given RSA object, returns a post-decryption extracted
-	/// XTEA object
-	crypto::Xtea rsaDecrypt(crypto::Rsa& rsa);
+	/// Extracts the XTEA key
+	crypto::Xtea getXtea();
 
 	/// Decrypts the message using the previously Xtea object returned by rsaDecrypt
 	void xteaDecrypt(crypto::Xtea& xtea);
+
+	/// Decrypts the message using the given RSA object, calls handler(true) on success or
+	/// handler(false) on failure.
+	template <class Handler>
+	void rsaDecrypt(crypto::Rsa& rsa, Handler&& handler)
+	{
+		rsa.decrypt(peekRawChunck(128), 128, [this, handler]
+		(boost::system::error_condition& e, int newSize){
+			if(!e){
+				setRemainingSize(newSize);
+				handler(getByte() == 0);
+			} else{
+				handler(false);
+			}
+		});
+	}
 };
 
 } /* namespace otservpp */
