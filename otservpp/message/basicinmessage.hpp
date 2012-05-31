@@ -6,14 +6,17 @@
 
 namespace otservpp {
 
-/// Simple in message for use in advanced message classes
-template <std::size_t HEADER_SIZE, std::size_t MAX_BODY_SIZE>
+/*! Simple in-message for use in advanced message classes
+ * The buffer is statically allocated, since most protocols use small buffers size this is OK.
+ */
+template <uint HEADER_SIZE, uint MAX_BODY_SIZE>
 class BasicInMessage {
 public:
 	typedef std::array<uint8_t, HEADER_SIZE+MAX_BODY_SIZE> Buffer;
 
 	BasicInMessage() :
-		pos(0)
+		pos(0),
+		size(HEADER_SIZE)
 	{}
 
 	BasicInMessage(BasicInMessage&&) = default;
@@ -23,36 +26,65 @@ public:
 		return boost::asio::buffer(buffer.data(), HEADER_SIZE);
 	}
 
-	boost::asio::mutable_buffers_1 getBodyBuffer(std::size_t bodySize)
+	boost::asio::mutable_buffers_1 getBodyBuffer()
 	{
-		assert(bodySize < MAX_BODY_SIZE);
-		return boost::asio::buffer(buffer.data()+HEADER_SIZE, bodySize);
+		assert(size > HEADER_SIZE);
+		return boost::asio::buffer(buffer.data()+HEADER_SIZE, size-HEADER_SIZE);
+	}
+
+	/// Returns the total size of the message (header + body)
+	uint getSize()
+	{
+		return size;
+	}
+
+	/// Returns the remaining size of the message (size - readpos)
+	uint getRemainingSize()
+	{
+		assert(size >= pos);
+		return size-pos;
+	}
+
+	/// Returns true if getRemainingSize() >= bytesRequired
+	bool isAvailable(uint bytesRequired)
+	{
+		return pos+bytesRequired <= size;
 	}
 
 	uint8_t getByte()
 	{
-		assert(pos+1 <= buffer.size());
-		return buffer[pos++];
+		movePos(1);
+		return buffer[pos-1];
 	}
 
 	uint16_t getU16()
 	{
-		return get<uint16_t>();
+		return getNumber<uint16_t>();
 	}
 
 	uint32_t getU32()
 	{
-		return get<uint32_t>();
+		return getNumber<uint32_t>();
 	}
 
-	uint64_t getU64(){
-		return get<uint64_t>();
-	}
-
-	void skipBytes(std::size_t b)
+	uint64_t getU64()
 	{
-		assert(pos+b <= buffer.size());
-		pos += b;
+		return getNumber<uint64_t>();
+	}
+
+	uint8_t* getRawChunck(uint bytes)
+	{
+		return getRawChunckAs<uint8_t>(bytes);
+	}
+
+	std::string getStrChunck(uint bytes)
+	{
+		return std::string(getRawChunckAs<char>(bytes), bytes);
+	}
+
+	void skipBytes(uint delta)
+	{
+		movePos(delta);
 	}
 
 	BasicInMessage(BasicInMessage&) = delete;
@@ -63,20 +95,38 @@ protected:
 
 	template <class T>
 	typename std::enable_if<std::is_arithmetic<T>::value, T>::type
-	get()
+	getNumber()
 	{
-		assert(pos+sizeof(T) <= buffer.size());
-		return *(T*)(buffer.data() + ((pos+=sizeof(T))-sizeof(T)));
+		return *getRawChunckAs<T>(sizeof(T));
 	}
 
-	uint8_t* getInternalBuffer()
+	template <class T>
+	T* getRawChunckAs(uint bytes)
 	{
-		return buffer.data();
+		movePos(bytes);
+		return reinterpret_cast<T*>(buffer.data() + (pos-bytes));
+	}
+
+	void movePos(uint bytesRequired)
+	{
+		if((pos+=bytesRequired) > size)
+			throwBufferException();
+	}
+
+	void throwBufferException()
+	{
+		throw std::out_of_range("attempt to overrun the incoming message buffer");
+	}
+
+	void setRemainingSize(uint bytes)
+	{
+		size = pos+bytes;
 	}
 
 private:
-	std::size_t pos;
 	Buffer buffer;
+	uint pos;
+	uint size;
 };
 
 } /* namespace otservpp */

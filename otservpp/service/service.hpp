@@ -59,10 +59,8 @@ public:
 
 protected:
 	/// Override for custom protocol creation
-	virtual ProtocolPtr<Protocol> makeProtocol(const ConnectionType& connection)
-	{
-		return std::make_shared<Protocol>(connection);
-	}
+	virtual ProtocolPtr<Protocol> makeProtocol(const ConnectionType& connection) = 0;
+
 
 	uint16_t port;
 };
