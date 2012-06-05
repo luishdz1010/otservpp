@@ -29,6 +29,12 @@ public:
 	/// Creates a new ConnectionPool with connectionNumber connections in it.
 	ConnectionPool(boost::asio::io_service& ioService, uint connectionNumber);
 
+	/// Returns the io_service associated with the ConnectionPool
+	boost::asio::io_service& getIoService()
+	{
+		return strand.get_io_service();
+	}
+
 	/*! Starts all the pool's connections using the given parameters.
 	 * This function returns immediately.
 	 *
@@ -36,9 +42,7 @@ public:
 	 * first error occurred between all connection attempts (if any) and the number of successful
 	 * started connections. The signature of the handler function must be:
 	 *
-	 * \code
-	 * 	void handler(const boost::system::error_code& e, uint startedConnections)
-	 * 	\endcode
+	 * \code void handler(const boost::system::error_code& e, uint startedConnections) \endcode
 	 *
 	 * If !!e == false then startedConnections == connectionNumber (given in constructor).
 	 *

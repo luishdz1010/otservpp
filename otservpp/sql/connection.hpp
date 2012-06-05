@@ -12,6 +12,7 @@ namespace otservpp{ namespace sql{
  * pain.
  *
  * A BasicConnection object can only have one asynchronous operation running at any given time.
+ * So this class is not thread safe, but every function inside it is reentrant.
  *
  * This class is only intended to be use as a connector and flag setting mechanism, although it
  * provides query functionality, it's better to use the Query and QueryFactory classes, alongside
@@ -20,10 +21,20 @@ namespace otservpp{ namespace sql{
 template <class SqlService>
 class BasicConnection : public boost::asio::basic_io_object<SqlService>{
 public:
+	typedef SqlService::implementation_type impl;
+	typedef impl::Id Id;
+	typedef impl::Handle Handle;
+	typedef impl::PreparedHandle PreparedHandle;
+
 	/// Creates a new connection object that isn't connected to any database
 	BasicConnection(boost::asio::io_service& ioService) :
 		boost::asio::basic_io_object<SqlService>(ioService)
 	{}
+
+	Id getId()
+	{
+		return get_service()->getId(get_implementation());
+	}
 
 	/*! Connects asynchronously to the indicated database
 	 * This function always return immediately, when the operation completes or fails
@@ -32,14 +43,35 @@ public:
 	 */
 	template <class Handler>
 	void connect(const boost::asio::ip::tcp::endpoint& endpoint,
-					  const std::string& user,
-					  const std::string& password,
-					  const std::string& schema,
-					  uint flags,
-					  Handler&& handler)
+			 const std::string& user,
+			 const std::string& password,
+			 const std::string& schema,
+			 uint flags,
+			 Handler&& handler)
 	{
 		get_service()->connect(get_implementation(),
 				endpoint, user, password, schema, flags, std::forward<Handler>(handler));
+	}
+
+	template <class Handler>
+	void executeQuery(const std::string& stmt, Handler&& handler)
+	{
+		get_service()->executeQuery(get_implementation(),
+				stmt, std::forward<Handler>(handler));
+	}
+
+	template <class Handler>
+	void prepareQuery(const std::string& stmt, Handler&&, handler)
+	{
+		get_service()->prepare(get_implementation(),
+				stmt, std::forward<Handler>(handler));
+	}
+
+	template <class Handler, class ValueTuple>
+	void executePrepared(const PreparedStatement& stmt, ValueTuple&& values, Handler&& handler)
+	{
+		get_service()->executeQuery(get_implementation(),
+				stmt, std::forward<Values>(values)..., std::forward<Handler>(handler));
 	}
 
 	/// Signals the active operation to be canceled as soon as possible

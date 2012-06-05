@@ -195,7 +195,7 @@ public:
 	// TODO implement these
 	std::string message(int e) const override
 	{
-		return "error message not yet implemented";
+		return "error messages not yet implemented";
 	}
 };
 

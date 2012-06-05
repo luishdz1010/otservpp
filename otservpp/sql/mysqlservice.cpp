@@ -1,16 +1,16 @@
 #include "mysqlservice.h"
 #include <glog/logging.h>
 
-namespace otservpp { namespace sql{
+namespace otservpp{ namespace sql{ namespace mysql{
 
-MySqlService::MySqlService(boost::asio::io_service& ioService) :
+Service::Service(boost::asio::io_service& ioService) :
 	boost::asio::io_service::service(ioService),
 	dummyWork(workIoService)
 {
 	initMySql();
 }
 
-void MySqlService::initMySql()
+void Service::initMySql()
 {
 	static struct Lib{
 		Lib() { throwIfError(::mysql_library_init(0, NULL, NULL)); }
@@ -18,13 +18,18 @@ void MySqlService::initMySql()
 	} init;
 }
 
-void MySqlService::shutdown_service()
+void Service::shutdown_service()
 {
 	workIoService.stop();
 	threadPool.join_all();
 }
 
-void MySqlService::create(ConnectionImpl& conn)
+ConnectionImpl::Id Service::getId(ConnectionImpl& conn)
+{
+	return &conn.handle;
+}
+
+void Service::create(ConnectionImpl& conn)
 {
 	if(!mysql_init(&conn.handle))
 		throw std::bad_alloc();
@@ -35,10 +40,15 @@ void MySqlService::create(ConnectionImpl& conn)
 
 	*thread = boost::thread([this, terminated, threadRawPtr]{
 		try{
-			while(!*terminated)
-				workIoService.run_one();
+			do
+				if(workIoService.run_one() == 0) break;
+			while(!*terminated);
 
-			threadPool.remove_thread(threadRawPtr);
+			if(!workIoService.stopped())
+				threadPool.remove_thread(threadRawPtr);
+
+			mysql_thread_end();
+
 		} catch(std::exception& e){
 			LOG(FATAL) << "unexpected exception during a mysql connection operation. "
 					"What: " << e.what() << std::endl;
@@ -48,16 +58,18 @@ void MySqlService::create(ConnectionImpl& conn)
 	threadPool.add_thread(thread.release());
 }
 
-void MySqlService::destroy(ConnectionImpl& conn)
+void Service::destroy(ConnectionImpl& conn)
 {
 	*conn.threadEndFlag = true;
 	mysql_close(&conn.handle);
 }
 
-void MySqlService::cancel(ConnectionImpl& conn)
+/* TODO delete this if it turns out to be not needed
+void Service::cancel(ConnectionImpl& conn)
 {
-	conn.cancelFlag = false;
-}
+	conn.cancelFlag.store(true, std::memory_order_release);
+}*/
 
+} /* namespace mysql */
 } /* namespace sql */
 } /* namespace otservpp */
