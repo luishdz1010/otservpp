@@ -2,6 +2,7 @@
 #define OTSERVPP_SQL_MYSQLTYPES_HPP_
 
 #include <mysql/mysql_com.h>
+#include <string>
 
 /*! \file
  * This file contains some helper templates that aid in the creation of MySql prepared
@@ -11,7 +12,7 @@ namespace otservpp{ namespace sql{ namespace mysql{
 
 template <enum_field_types T>
 struct SqlType{
-	enum { SqlT = T };
+	static const enum_field_types SqlT = T;
 };
 
 template <class T> struct CppToSql;
@@ -43,6 +44,11 @@ public:
 	auto operator=(U&& u)-> decltype(std::declval<U>().operator=(std::forward<U>(u)))
 	{
 		return value.operator=(std::forward<U>(u));
+	}
+
+	const T& get() const
+	{
+		return value;
 	}
 
 	T& get()
@@ -78,33 +84,10 @@ typedef Wrapper<std::string> String;
 typedef Wrapper<std::string, SqlType<MYSQL_TYPE_BLOB>> Blob;
 
 
-/// Fills the given MYSQL_BIND structure with the given values recursively.
-/// All the other fill* functions form part of the job of this function.
-template <class... Values>
-inline void fillParams(MYSQL_BIND* bind, const std::tuple<Values...>& values)
-{
-	fill<sizeof...(Values)-1>(bind, values);
-}
-
-template <int pos, class Tuple>
-inline typename std::enable_if<(pos > 0)>::value
-fillParams(MYSQL_BIND* bind, const Tuple& values)
-{
-	fill(bind[pos], std::get<pos>(values));
-	fill<pos-1>(bind, values);
-}
-
-template <int pos, class Tuple>
-inline typename std::enable_if<pos == 0>::value
-fillParams(MYSQL_BIND* bind, const Tuple& values)
-{
-	fill(bind[0], std::get<0>(values));
-}
-
 inline void fill(MYSQL_BIND& bind, Null)
 {
 	bind.buffer_type = MYSQL_TYPE_NULL;
-};
+}
 
 template <class T, int SqlT = CppToSql<T>::SqlT>
 inline void fill(MYSQL_BIND& bind, const T& value)
@@ -130,9 +113,14 @@ fillBuffer(MYSQL_BIND& bind, const T& value)
 
 inline void fillBuffer(MYSQL_BIND& bind, const std::string& str)
 {
-	bind.buffer = static_cast<void*>(str.data());
-	//bind.buffer_length = str.capacity(); not needed when binding params?
-	bind.length = str.length();
+	bind.buffer = static_cast<void*>(const_cast<char*>(str.data()));
+	// ok, mysql C API is completely retarded, for some reason we need to specify the buffer
+	// length as a pointer, if we do that we will need some helper structs for this tiny stupid
+	// thing. But here's the catch: it appears that if you left length as 0, buffer_length
+	// is used instead, this doesn't really matter for us because we always re-bind on every
+	// execution, so we will left it as is
+	bind.buffer_length = str.length();//str.capacity();
+	//bind.length = str.length();
 }
 
 template <class T>
@@ -145,6 +133,29 @@ inline void fill(MYSQL_BIND& bind, const Blob& blob)
 {
 	bind.buffer_type = Blob::SqlT;
 	fillBuffer(bind, blob.get());
+}
+
+/// Fills the given MYSQL_BIND structure with the given values recursively.
+/// All the other fill* functions form part of the job of this function.
+template <class... Values>
+inline void fillParams(MYSQL_BIND* bind, const std::tuple<Values...>* values)
+{
+	fill<sizeof...(Values)-1>(bind, values);
+}
+
+template <int pos, class Tuple>
+inline typename std::enable_if<(pos > 0)>::value
+fillParams(MYSQL_BIND* bind, const Tuple* values)
+{
+	fill(bind[pos], std::get<pos>(*values));
+	fill<pos-1>(bind, values);
+}
+
+template <int pos, class Tuple>
+inline typename std::enable_if<pos == 0>::value
+fillParams(MYSQL_BIND* bind, const Tuple* values)
+{
+	fill(bind[0], std::get<0>(*values));
 }
 
 

@@ -3,6 +3,7 @@
 
 #include <deque>
 #include <algorithm>
+#include <boost/asio/strand.hpp>
 #include "sql.hpp"
 #include "connection.hpp"
 
@@ -60,8 +61,7 @@ public:
 					  Handler&& handler)
 	{
 		strand.dispatch([=]{
-			auto control = std::make_shared<ConnectControl>(
-					std::forward<Handler>(handler), pool);
+			auto control = std::make_shared<ConnectControl>(std::forward<Handler>(handler), pool);
 
 			for(auto& conn : pool){
 				conn->connect(endpoint, user, password, schema, flags,
@@ -75,7 +75,7 @@ public:
 					}
 
 					if(control.unique())
-						control->handler(constrol->firstError, pool.size());
+						control->handler(control->firstError, control->pool.size());
 				}));
 			}
 		});
@@ -95,7 +95,7 @@ public:
 	template <class Handler>
 	void getConnection(Handler&& handler)
 	{
-		strand.dispatch([=]{
+		strand.dispatch([=]()mutable{
 			if(pool.empty()){
 				requestQueue.emplace_back(std::forward<Handler>(handler));
 			} else {
@@ -111,7 +111,10 @@ public:
 	void operator=(ConnectionPool&) = delete;
 
 private:
+	// unique_ptr with default deleter for internal use
+	typedef std::unique_ptr<Connection> InternalConnectionPtr;
 	typedef std::deque<InternalConnectionPtr> InternalPool;
+	typedef std::deque<std::function<void(ConnectionPtr)>> ConnectionRequestQueue;
 
 	// helper for asyncConnect
 	template <class Handler>
@@ -126,10 +129,6 @@ private:
 		boost::system::error_code firstError;
 		InternalPool& pool;
 	};
-
-	// unique_ptr with default deleter for internal use
-	typedef std::unique_ptr<Connection> InternalConnectionPtr;
-	typedef std::deque<std::function<void(ConnectionPtr)>> ConnectionRequestQueue;
 
 	friend struct OnDeleteReturnToPool;
 

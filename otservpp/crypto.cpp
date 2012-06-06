@@ -97,7 +97,7 @@ Rsa::Rsa(boost::asio::io_service& ioService,
 
 	if(!ok || RSA_check_key(rsa) < 1){
 		RSA_free(rsa);
-		throw boost::system::system_error(ERR_get_error(), errorCategory());
+		throw boost::system::system_error(static_cast<int>(ERR_get_error()), errorCategory());
 	}
 }
 
@@ -111,7 +111,7 @@ int Rsa::decrypt(uint8_t* buffer, std::size_t length, boost::system::error_condi
 	int newLen = RSA_private_decrypt((int)length, buffer, buffer, rsa, RSA_NO_PADDING);
 
 	if(newLen == -1)
-		e.assign(ERR_get_error(), errorCategory());
+		e.assign(static_cast<int>(ERR_get_error()), errorCategory());
 
 	return newLen;
 }

@@ -18,7 +18,7 @@ void ConnectionPool::returnToPool(Connection* conn)
 {
 	strand.dispatch([=]{
 		if(requestQueue.empty()){
-			connectionPool.emplace_back(conn);
+			pool.emplace_back(conn);
 		} else {
 			// pop before calling for reentrancy & exeception safety
 			auto handler = std::move(requestQueue.front());

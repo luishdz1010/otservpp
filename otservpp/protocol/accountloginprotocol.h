@@ -31,8 +31,10 @@ public:
 		CharacterList = 0x64
 	};
 
-	explicit AccountLoginProtocol(const ConnectionPtrType& conn, LoginSharedData& data) :
+	AccountLoginProtocol(const ConnectionPtrType& conn, LoginSharedData& data,
+			boost::asio::io_service& svc) :
 		StandardProtocol(conn),
+		ioService(svc),
 		p(data)
 	{}
 
@@ -51,6 +53,7 @@ private:
 	/// LoginSharedData::loginFailedHook(peerAddress, error code[, account])
 	//void closeWithError(AccountLoginError error, const AccountPtr& acc = AccountPtr());
 
+	boost::asio::io_service& ioService;
 	LoginSharedData& p;
 };
 

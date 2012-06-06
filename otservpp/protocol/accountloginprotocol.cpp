@@ -8,7 +8,23 @@ using namespace hook;
 
 void AccountLoginProtocol::handleFirstMessage(StandardInMessage& msg)
 {
-	/*connection->stopReceiving();
+	connection->stopReceiving();
+}
+	/*msg.skipBytes(1); // protocolid
+	auto version = msg.getClientVersion();
+	msg.skipBytes(12);
+
+	msg.rsaDecrypt(rsa, [this, &msg](bool success){
+		if(success){
+			auto xtea = msg.getXtea();
+			auto user = msg.getString();
+			auto pass = msg.getString();
+			int x = 12;
+		} else{
+			throw std::runtime_error("error_");
+		}
+	});
+
 
 	p.getPeerState(connection->getPeerAddress(), [this, &msg](PeerState s){
 		switch(s){
@@ -52,10 +68,10 @@ void AccountLoginProtocol::handleFirstMessage(StandardInMessage& msg)
 
 			connection->sendAndStop(out);
 		});
-	});*/
+	});
 }
 
-/*void LoginProtocol::closeWithError(AccountLoginError error, const AccountPtr& acc)
+void LoginProtocol::closeWithError(AccountLoginError error, const AccountPtr& acc)
 {
 	p.dispatcher.callLater([=]() {
 		StandarOutMessage msg;

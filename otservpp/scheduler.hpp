@@ -5,6 +5,7 @@
 #include <boost/thread/thread.hpp>
 #include "forwarddcl.hpp"
 #include "networkdcl.hpp"
+#include "lambdautil.hpp"
 
 namespace otservpp {
 
@@ -25,30 +26,6 @@ public:
 	void operator=(BaseDeferredTask&) = delete;
 
 protected:
-	// TODO expand this and move it to its own util namespace if required
-	template <class Lambda> struct function_traits :
-		public function_traits<decltype(&Lambda::operator())> {};
-
-	template <class Ret, class... Args>
-	struct function_traits<Ret(Args...)>{
-		enum{ arity = sizeof...(Args) };
-	};
-
-	template <class Ret, class... Args>
-	struct function_traits<Ret(*)(Args...)> : public function_traits<Ret(Args...)> {};
-
-	template <class Ret, class T, class... Args>
-	struct function_traits<Ret(T::*)(Args...)> : public function_traits<Ret(Args...)> {};
-
-	template <class Ret, class T, class... Args>
-	struct function_traits<Ret(T::*)(Args...) const> : public function_traits<Ret(Args...)> {};
-
-	template <class T>
-	struct function_traits<std::function<T>> : public function_traits<T> {};
-
-	template <class T>
-	struct function_traits<T&> : public function_traits<typename std::remove_reference<T>::type> {};
-
 	explicit BaseDeferredTask(boost::asio::io_service& ioService) :
 		timer(ioService)
 	{}
@@ -154,7 +131,7 @@ public:
 	template <class Func, class std::enable_if<function_traits<Func>::arity == 1, int>::type = 0>
 	IntervalTask(boost::asio::io_service& ioService, int millisec, Func&& func) :
 		IntervalTask(ioService, millisec,
-			[func](const SystemErrorCode& e, IntervalTask* _) mutable { func(e); })
+			[func](const SystemErrorCode& e, IntervalTask*) mutable { func(e); })
 	{}
 
 	/// Starts the execution of the bounded task

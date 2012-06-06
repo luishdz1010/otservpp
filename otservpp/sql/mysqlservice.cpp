@@ -1,7 +1,11 @@
 #include "mysqlservice.h"
 #include <glog/logging.h>
+#include "../forwarddcl.hpp"
+#include "../lambdautil.hpp"
 
 namespace otservpp{ namespace sql{ namespace mysql{
+
+boost::asio::io_service::id Service::id;
 
 Service::Service(boost::asio::io_service& ioService) :
 	boost::asio::io_service::service(ioService),
@@ -12,10 +16,12 @@ Service::Service(boost::asio::io_service& ioService) :
 
 void Service::initMySql()
 {
-	static struct Lib{
-		Lib() { throwIfError(::mysql_library_init(0, NULL, NULL)); }
-		~Lib(){ ::mysql_library_end(); }
-	} init;
+	static auto init = makeScopedOperation([]{
+		if(::mysql_library_init(0, NULL, NULL))
+			throw std::bad_alloc();
+	}, []{
+		::mysql_library_end();
+	});
 }
 
 void Service::shutdown_service()
@@ -29,7 +35,7 @@ ConnectionImpl::Id Service::getId(ConnectionImpl& conn)
 	return &conn.handle;
 }
 
-void Service::create(ConnectionImpl& conn)
+void Service::construct(ConnectionImpl& conn)
 {
 	if(!mysql_init(&conn.handle))
 		throw std::bad_alloc();

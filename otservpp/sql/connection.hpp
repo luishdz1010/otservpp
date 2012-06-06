@@ -21,10 +21,11 @@ namespace otservpp{ namespace sql{
 template <class SqlService>
 class BasicConnection : public boost::asio::basic_io_object<SqlService>{
 public:
-	typedef SqlService::implementation_type impl;
-	typedef impl::Id Id;
-	typedef impl::Handle Handle;
-	typedef impl::PreparedHandle PreparedHandle;
+	typedef typename SqlService::implementation_type impl;
+	typedef typename impl::Id Id;
+	typedef typename impl::Handle Handle;
+	typedef typename impl::PreparedHandle PreparedHandle;
+	typedef typename impl::ResultSet ResultSet;
 
 	/// Creates a new connection object that isn't connected to any database
 	BasicConnection(boost::asio::io_service& ioService) :
@@ -33,7 +34,7 @@ public:
 
 	Id getId()
 	{
-		return get_service()->getId(get_implementation());
+		return get_service().getId(get_implementation());
 	}
 
 	/*! Connects asynchronously to the indicated database
@@ -49,29 +50,29 @@ public:
 			 uint flags,
 			 Handler&& handler)
 	{
-		get_service()->connect(get_implementation(),
+		get_service().connect(get_implementation(),
 				endpoint, user, password, schema, flags, std::forward<Handler>(handler));
 	}
 
 	template <class Handler>
 	void executeQuery(const std::string& stmt, Handler&& handler)
 	{
-		get_service()->executeQuery(get_implementation(),
+		get_service().executeQuery(get_implementation(),
 				stmt, std::forward<Handler>(handler));
 	}
 
 	template <class Handler>
-	void prepareQuery(const std::string& stmt, Handler&&, handler)
+	void prepareQuery(const std::string& stmt, Handler&& handler)
 	{
-		get_service()->prepare(get_implementation(),
+		get_service().prepareQuery(get_implementation(),
 				stmt, std::forward<Handler>(handler));
 	}
 
 	template <class Handler, class ValueTuple>
-	void executePrepared(const PreparedStatement& stmt, ValueTuple&& values, Handler&& handler)
+	void executePrepared(const PreparedHandle& stmt, ValueTuple* values, Handler&& handler)
 	{
-		get_service()->executeQuery(get_implementation(),
-				stmt, std::forward<Values>(values)..., std::forward<Handler>(handler));
+		get_service().executePrepared(get_implementation(),
+				values, std::forward<Handler>(handler));
 	}
 
 	/// Signals the active operation to be canceled as soon as possible
@@ -79,11 +80,15 @@ public:
 	/// boost::asio::operation_aborted error code, otherwise the operation is called normally.
 	void cancel()
 	{
-		get_service()->cancel(get_implementation());
+		get_service().cancel(get_implementation());
 	}
 
 	BasicConnection(BasicConnection&) = delete;
 	void operator=(BasicConnection&) = delete;
+
+private:
+	using boost::asio::basic_io_object<SqlService>::get_service;
+	using boost::asio::basic_io_object<SqlService>::get_implementation;
 };
 
 } /* namespace sql */

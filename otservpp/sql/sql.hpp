@@ -2,6 +2,7 @@
 #define OTSERVPP_SQL_HPP_
 
 #include <memory>
+#include "connection.hpp"
 
 namespace otservpp{ namespace sql{
 
@@ -23,7 +24,7 @@ class ResultSet;
 typedef BasicConnection<mysql::Service> Connection;
 typedef Connection::ResultSet ResultSet;
 
-typedef std::shared_ptr<Connection, OnDeleteReturnToPool> ConnectionPtr;
+typedef std::shared_ptr<Connection> ConnectionPtr;
 
 } /* namespace sql */
 } /* namespace otservpp */

@@ -4,22 +4,51 @@
 #include <memory>
 #include <atomic>
 #include <boost/asio/io_service.hpp>
+#include <boost/asio/ip/tcp.hpp>
 #include <boost/thread/thread.hpp>
 #include <mysql/mysql.h>
 #include "error.hpp"
+#include "mysqltypes.hpp"
 
 namespace otservpp{ namespace sql{ namespace mysql{
 
 struct StmtDeleter;
-struct ConnectionImpl;
-class ResultSet;
 
 typedef MYSQL* Id;
 typedef MYSQL* Handle;
-typedef std::shared_ptr<MYSQL_STMT, StmtDeleter> PreparedHandle;
+typedef std::shared_ptr<MYSQL_STMT> PreparedHandle;
 
-template <class... Values>
-using SharedTuple = std::shared_ptr<std::tuple<Values...>>;
+/*! A MySQL ResultSet implementation
+ *
+ */
+class ResultSet{
+public:
+	ResultSet(){}
+
+	static const ResultSet& emptySet()
+	{
+		static ResultSet empty;
+		return empty;
+	}
+};
+
+/// The implementation details of the MySQL connection
+struct ConnectionImpl{
+	typedef mysql::Id Id;
+	typedef mysql::Handle Handle;
+	typedef mysql::PreparedHandle PreparedHandle;
+	typedef mysql::ResultSet ResultSet;
+
+	ConnectionImpl() :
+		threadEndFlag(std::make_shared<bool>(false)),
+		cancelFlag(false)
+	{}
+
+	MYSQL handle;
+	// no need for volatile or atomic since we don't need deterministic thread destruction
+	std::shared_ptr<bool> threadEndFlag;
+	std::atomic_bool cancelFlag;
+};
 
 
 /*! A MySQL implementation for sql::BasicConnection
@@ -34,6 +63,9 @@ using SharedTuple = std::shared_ptr<std::tuple<Values...>>;
  */
 class Service : public boost::asio::io_service::service{
 public:
+	/// The id of the service as required by io_service::service
+	static boost::asio::io_service::id id;
+
 	/// Required by asio::basic_io_object
 	typedef ConnectionImpl implementation_type;
 
@@ -41,10 +73,10 @@ public:
 
 	void shutdown_service() override;
 
-	void create(ConnectionImpl& conn);
+	void construct(ConnectionImpl& conn);
 	void destroy(ConnectionImpl& conn);
 
-	ConnectionImpl::Id getId(ConnectionImpl& conn);
+	Id getId(ConnectionImpl& conn);
 
 	template <class Handler>
 	void connect(ConnectionImpl& conn,
@@ -56,7 +88,7 @@ public:
 			Handler&& handler)
 	{
 		workIoService.post([=, &conn]{
-			postHandlerOrError(conn, handler,
+			postHandlerOrError(conn, std::forward<Handler>(const_cast<Handler&>(handler)),
 				// returns NULL on failure
 				!::mysql_real_connect(&conn.handle,
 					endpoint.address().to_string().c_str(),
@@ -97,22 +129,26 @@ public:
 				return postErrorHandler(stmt, handler, stmt);
 
 			postHandlerOrError(stmt, handler, stmt,
-				::mysql_stmt_prepare(stmt, stmtStr.data(), stmtStr.length()));
+				::mysql_stmt_prepare(stmt.get(), stmtStr.data(), stmtStr.length()));
 		});
 	}
 
 	template <class Handler, class... Values>
 	void executePrepared(ConnectionImpl& conn,
 			PreparedHandle& stmt,
-			const SharedTuple<Values...>& values,
+			const std::tuple<Values...>* values,
 			Handler&& handler)
 	{
 		workIoService.post([=, &conn]{
-			MYSQL_BIND params[sizeof...(Values)] = {};
+			assert(mysql_stmt_param_count(stmt.get()) == sizeof...(Values) &&
+					"invalid param count");
 
-			fillParams(params, *values);
+			MYSQL_BIND params[sizeof...(Values)] = {}; // zero fill
 
-			if(mysql_stmt_bind_param(stmt.get(), params) || mysql_stmt_execute(stmt.get()))
+			fillParams(params, values);
+
+			// both functions return != 0 on failure
+			if(::mysql_stmt_bind_param(stmt.get(), params) || ::mysql_stmt_execute(stmt.get()))
 				return postErrorHandler(stmt, handler, ResultSet::emptySet());
 
 			std::cout << "Rows: " << mysql_stmt_affected_rows(stmt.get());
@@ -134,43 +170,49 @@ private:
 		return conn.cancelFlag.load(std::memory_order_acquire);
 	}
 
-	template <class Handle, class... Args>
-	void abortOperation(Handler& handler, Args&&... args)
+	template <class Handler, class... Args>
+	void abortOperation(Handler&& handler, Args&&... args)
 	{
-		postHandler(handler, boost::asio::error::operation_aborted, std::forward<Args>(args));
+		postHandler(std::forward<Handler>(handler), boost::asio::error::operation_aborted,
+				std::forward<Args>(args)...);
 	}
 
 	template <class Handler, class... Args>
-	void postHandler(Handler& handler, Args&&... args)
+	void postHandler(Handler&& handler, Args&&... args)
 	{
-		get_io_service().post([handler, args...]{ handler(args...); });
+		get_io_service().post(makeLambda(std::forward<Handler>(handler),
+				std::forward<Args>(args)...));
 	}
 
 	template <class Source, class Handler, class Error, class... Args>
-	void postHandlerOrError(Source& source, Handler& handler,  Args&&... args, Error e)
+	void postHandlerOrError(Source& src, Handler&& handler,  Args&&... args, Error e)
 	{
 		if(e)
-			postErrorHandler(source, handler, std::forward<Args>(args)...);
+			postErrorHandler(src, std::forward<Handler>(handler), std::forward<Args>(args)...);
 		else
-			postHandler(handler, std::forward<Args>(args)...);
+			postHandler(std::forward<Handler>(handler), boost::system::error_code(),
+					std::forward<Args>(args)...);
 	}
 
 	template <class Handler, class... Args>
-	void postErrorHandler(ConnectionImpl& conn, Handler& handler, Args&&... args)
+	void postErrorHandler(ConnectionImpl& conn, Handler&& handler, Args&&... args)
 	{
-		doPostErrorHandler(handler, ::mysql_errno(&conn.handle), std::forward<Args>(args)...);
+		doPostErrorHandler(std::forward<Handler>(handler),
+				::mysql_errno(&conn.handle), std::forward<Args>(args)...);
 	}
 
 	template <class Handler, class... Args>
-	void postErrorHandler(PreparedHandle& stmt, Handler& handler, Args&&... args)
+	void postErrorHandler(PreparedHandle& stmt, Handler&& handler, Args&&... args)
 	{
-		doPostErrorHandler(handler, ::mysql_stmt_errno(stmt.get()), std::forward<Args>(args)...);
+		doPostErrorHandler(std::forward<Handler>(handler),
+				::mysql_stmt_errno(stmt.get()), std::forward<Args>(args)...);
 	}
 
 	template <class Handler, class... Args>
-	void doPostErrorHandler(Handler& handler, uint e, Args&&... args)
+	void doPostErrorHandler(Handler&& handler, uint e, Args&&... args)
 	{
-		postHandler(handler, boost::system::error_code((int)e, getErrorCategory()),
+		postHandler(std::forward<Handler>(handler),
+				boost::system::error_code(static_cast<int>(e), getErrorCategory()),
 				std::forward<Args>(args)...);
 	}
 
@@ -188,39 +230,6 @@ struct StmtDeleter{
 	}
 };
 
-
-/// The implementation details of the MySQL connection
-struct ConnectionImpl{
-	typedef Id Id;
-	typedef Handle Handle;
-	typedef PreparedHandle PreparedHandle;
-	typedef ResultSet ResultSet;
-
-	ConnectionImpl() :
-		threadEndFlag(std::make_shared<bool>(false)),
-		cancelFlag(false)
-	{}
-
-	MYSQL handle;
-	// no need for volatile or atomic since we don't need deterministic thread destruction
-	std::shared_ptr<bool> threadEndFlag;
-	std::atomic_bool cancelFlag;
-};
-
-
-/*! A MySQL ResultSet implementation
- *
- */
-class ResultSet{
-public:
-	ResultSet(){}
-
-	static const ResultSet& emptySet()
-	{
-		static ResultSet empty;
-		return empty;
-	}
-};
 
 } /* namespace mysql */
 } /* namespace sql */

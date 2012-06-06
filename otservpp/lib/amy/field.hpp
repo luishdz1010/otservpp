@@ -29,10 +29,10 @@ public:
         return value_str_ == 0;
     }
 
-    template<typename SQLType>
+    template <typename SQLType>
     SQLType as() const {
-        BOOST_ASSERT(!is_null());
-        return detail::value_cast<SQLType>(std::string(value_str_, length_));
+    	BOOST_ASSERT(!is_null());
+    	return detail::value_cast<SQLType>(std::string(value_str_, length_));
     }
 
 private:

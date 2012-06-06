@@ -4,32 +4,25 @@
 #include <amy/sql_types.hpp>
 
 #include <boost/date_time/posix_time/posix_time.hpp>
-#include <iomanip>
-#include <string>
-#include <sstream>
+#include <boost/lexical_cast.hpp>
+#include <boost/numeric/conversion/cast.hpp>
 
 namespace amy {
 namespace detail {
 
 template<typename ValueType>
 ValueType value_cast(std::string const& str) {
-    ValueType v;
-    std::istringstream(str) >> v;
-    return v;
+    return boost::lexical_cast<ValueType>(str);
 }
 
 template<>
 inline sql_tinyint value_cast(std::string const& str) {
-    int v;
-    std::istringstream(str) >> v;
-    return static_cast<sql_tinyint>(v);
+    return boost::numeric_cast<sql_tinyint>(boost::lexical_cast<int>(str));
 }
 
 template<>
 inline sql_tinyint_unsigned value_cast(std::string const& str) {
-    int v;
-    std::istringstream(str) >> v;
-    return static_cast<sql_tinyint_unsigned>(v);
+	return boost::numeric_cast<sql_tinyint_unsigned>(boost::lexical_cast<int>(str));
 }
 
 template<>
@@ -88,23 +81,6 @@ inline sql_time value_cast(std::string const& str) {
 
     return v;
 }
-
-#ifdef WIN32
-
-#include <stdio.h> // For ::_strtoui64
-
-/// \c value_cast<sql_bigint_unsigned> specialization for win32 platform only.
-/**
- * \c std::istringstream cannot deal with unsigned 64-bit integer under the
- * win32 platform.  And \c _strtoui64 is used instead.
- */
-template<>
-inline sql_bigint_unsigned value_cast(std::string const& str) {
-    sql_bigint_unsigned v = ::_strtoui64(str.c_str(), NULL, 10);
-    return v;
-}
-
-#endif  //  ifdef WIN32
 
 }   //  namespace detail
 }   //  namespace amy
