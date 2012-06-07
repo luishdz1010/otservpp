@@ -1,7 +1,6 @@
 #ifndef OTSERVPP_CONNECTION_HPP_
 #define OTSERVPP_CONNECTION_HPP_
 
-#include <atomic>
 #include <deque>
 #include <glog/logging.h>
 #include "../forwarddcl.hpp"
@@ -94,9 +93,7 @@ public:
 	{
 		assert(old.outMsgQueue.empty());
 		assert(!old.isStopped());
-#ifndef NDEBUG
-		try{ impl->strand.dispatch([]{ throw "not in handleMessage call stack"; }); }catch(...){};
-#endif
+
 		DLOG(INFO) << "switching protocol from" << old.protocol->getName() << logInfo();
 
 		// after returning from OldProtocol::handle[First]Message 'isStopped()' must return

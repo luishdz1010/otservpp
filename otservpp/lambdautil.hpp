@@ -33,62 +33,77 @@ template <class T>
 struct function_traits<T&> : public function_traits<typename std::remove_reference<T>::type> {};
 
 
+// helpers for Lambda
+template <class T>
+struct LambdaTraits : public function_traits<T> {};
+
 /*! Variadic captures, move-enabled lambdas
- * C++ lambdas cannot capture by "move", this is sometimes an inconvinient. Here we simply
+ * C++ lambdas cannot capture by "move", this is sometimes an inconvenient. Here we simply
  * emulate captures by storing the arguments inside the object and passing them to the
- * lambda when it is executed (alongside with the arguments received). This works like
+ * lambda when it is executed (alongside with the arguments received). This works similar to
  * std::bind but its less verbose. Some examples:
  * \code
  *  template <class... Args>
  * 	void foo(Args&&... args)
  * 	{
  * 		// perfect forwards args... to bar()
- * 		makeLambda(std::forward<Args>(args)..., [](Args&... args){ // TAKE BY REF NOT BY &&
+ * 		lambdaBind([](Args&&... args){ // take by &&
  * 			bar(std::forward<Args>(args)...);
- * 		})();
+ * 		}, std::forward<Args>(args)...)();
  * 	}
  * 	...
  * 	// parameters passed in the call site are appended to the right
- * 	makeLambda(1, 2, [](int one, int two, int three){})(3);
+ * 	lambdaBind(1, 2, [](int one, int two, int three){})(3);
  *	...
- *	makeLambda(std::move(foo), [](Foo& foo){
+ *	lambdaBind(std::move(foo), [](Foo& foo){
  *		return bar(std::move(foo)); // works with return types
  *	});
  * \endcode
  */
 template <class L, class... Captures>
 class Lambda{
+	static_assert(std::is_same<typename std::remove_reference<L>::type, L>::value,
+				"lambda type must not be a reference");
+
 	// unpacking of tuples
 	template <int...> struct Seq{};
 	template <int n, int... s> struct Counter : Counter<n-1, n-1, s...>{};
 	template <int... s> struct Counter<0, s...>{ typedef Seq<s...> type; };
 
 public:
-	typedef typename function_traits<L>::result_type result_type;
+	typedef typename LambdaTraits<L>::result_type result_type;
+	typedef typename Counter<sizeof...(Captures)>::type CaptureSeq;
     typedef std::tuple<typename std::remove_reference<Captures>::type...> StoredTypes;
     typedef std::tuple<Captures...> OriginalTypes;
 
-	template<class U, class... Args>
-	Lambda(U&& lambda_, Args&&... args) :
-		captures(std::forward<Args>(args)...),
+	template<class U, class Arg1, class... Args>
+	Lambda(U&& lambda_, Arg1&& arg1, Args&&... args) :
+		captures(std::forward<Arg1>(arg1), std::forward<Args>(args)...),
 		lambda(std::forward<U>(lambda_))
 	{}
+
+	// has to be defined for some reason in gcc
+	Lambda(Lambda&& o) :
+		captures(std::move(o.captures)),
+		lambda(std::move(o.lambda))
+	{}
+
+	Lambda(const Lambda&) = default;
 
 	template <class... Args>
 	result_type operator()(Args&&... args)
 	{
-		return call(typename Counter<sizeof...(Captures)>::type(), std::forward<Args>(args)...);
+		return call(CaptureSeq(), std::forward<Args>(args)...);
 	}
 
 private:
 	template <int... seq, class... Args>
 	result_type call(Seq<seq...>, Args&&... args)
 	{
-		//return lambda(std::get<seq>(captures)..., std::forward<Args>(args)...);
 		return lambda(
-				std::forward<typename std::tuple_element<seq, OriginalTypes>::type>
-					(std::get<seq>(captures))...,
-				std::forward<Args>(args)...
+			std::forward<typename std::tuple_element<seq, OriginalTypes>::type>
+				(std::get<seq>(captures))...,
+			std::forward<Args>(args)...
 		);
 	}
 
@@ -96,9 +111,13 @@ private:
 	L lambda;
 };
 
+// useful for nested Lambda structures
+template <class T, class... Captures>
+struct LambdaTraits<Lambda<T, Captures...>> : public LambdaTraits<T>{};
+
 template <class L, class... Captures>
 inline Lambda<typename std::remove_reference<L>::type, Captures...>
-makeLambda(L&& lambda, Captures&&... args)
+lambdaBind(L&& lambda, Captures&&... args)
 {
 	return {std::forward<L>(lambda), std::forward<Captures>(args)...};
 }

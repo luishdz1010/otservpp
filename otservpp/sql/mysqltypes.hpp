@@ -84,20 +84,8 @@ typedef Wrapper<std::string> String;
 typedef Wrapper<std::string, SqlType<MYSQL_TYPE_BLOB>> Blob;
 
 
-inline void fill(MYSQL_BIND& bind, Null)
-{
-	bind.buffer_type = MYSQL_TYPE_NULL;
-}
-
-template <class T, int SqlT = CppToSql<T>::SqlT>
-inline void fill(MYSQL_BIND& bind, const T& value)
-{
-	bind.buffer_type = SqlT;
-	fillBuffer(bind, value);
-}
-
 template <class T>
-inline typename std::enable_if<std::is_scalar<T>::value>
+inline typename std::enable_if<std::is_scalar<T>::value>::type
 fillBuffer(MYSQL_BIND& bind, const T& value)
 {
 	bind.buffer = static_cast<void*>(&value);
@@ -105,7 +93,7 @@ fillBuffer(MYSQL_BIND& bind, const T& value)
 }
 
 template <class T>
-inline typename std::enable_if<std::is_floating_point<T>::value>
+inline typename std::enable_if<std::is_floating_point<T>::value>::type
 fillBuffer(MYSQL_BIND& bind, const T& value)
 {
 	bind.buffer = static_cast<void*>(&value);
@@ -123,6 +111,18 @@ inline void fillBuffer(MYSQL_BIND& bind, const std::string& str)
 	//bind.length = str.length();
 }
 
+inline void fill(MYSQL_BIND& bind, Null)
+{
+	bind.buffer_type = MYSQL_TYPE_NULL;
+}
+
+template <class T, enum_field_types SqlT = CppToSql<T>::SqlT>
+inline void fill(MYSQL_BIND& bind, const T& value)
+{
+	bind.buffer_type = SqlT;
+	fillBuffer(bind, value);
+}
+
 template <class T>
 inline void fill(MYSQL_BIND& bind, const Wrapper<T>& value)
 {
@@ -135,29 +135,28 @@ inline void fill(MYSQL_BIND& bind, const Blob& blob)
 	fillBuffer(bind, blob.get());
 }
 
-/// Fills the given MYSQL_BIND structure with the given values recursively.
-/// All the other fill* functions form part of the job of this function.
-template <class... Values>
-inline void fillParams(MYSQL_BIND* bind, const std::tuple<Values...>* values)
-{
-	fill<sizeof...(Values)-1>(bind, values);
-}
-
 template <int pos, class Tuple>
-inline typename std::enable_if<(pos > 0)>::value
-fillParams(MYSQL_BIND* bind, const Tuple* values)
-{
-	fill(bind[pos], std::get<pos>(*values));
-	fill<pos-1>(bind, values);
-}
-
-template <int pos, class Tuple>
-inline typename std::enable_if<pos == 0>::value
+inline typename std::enable_if<pos == 0>::type
 fillParams(MYSQL_BIND* bind, const Tuple* values)
 {
 	fill(bind[0], std::get<0>(*values));
 }
 
+template <int pos, class Tuple>
+inline typename std::enable_if<(pos > 0)>::type
+fillParams(MYSQL_BIND* bind, const Tuple* values)
+{
+	fill(bind[pos], std::get<pos>(*values));
+	fillParams<pos-1>(bind, values);
+}
+
+/// Fills the given MYSQL_BIND structure with the given values recursively.
+/// All the other fill* functions form part of the job of this function.
+template <class... Values>
+inline void fillParams(MYSQL_BIND* bind, const std::tuple<Values...>* values)
+{
+	fillParams<sizeof...(Values)-1>(bind, values);
+}
 
 } /* namespace mysql */
 } /* namespace sql */

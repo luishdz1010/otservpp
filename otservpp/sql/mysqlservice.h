@@ -45,11 +45,18 @@ struct ConnectionImpl{
 	{}
 
 	MYSQL handle;
-	// no need for volatile or atomic since we don't need deterministic thread destruction
+	// no need for atomic since we don't need deterministic thread destruction
 	std::shared_ptr<bool> threadEndFlag;
 	std::atomic_bool cancelFlag;
 };
 
+/// shared_ptr<mysql_stmt> deleter
+struct StmtDeleter{
+	void operator()(MYSQL_STMT* stmt)
+	{
+		::mysql_stmt_close(stmt);
+	}
+};
 
 /*! A MySQL implementation for sql::BasicConnection
  * Each connection shares a thread pool with all the other connections created by the same
@@ -87,18 +94,16 @@ public:
 			unsigned long flags,
 			Handler&& handler)
 	{
-		workIoService.post([=, &conn]{
-			postHandlerOrError(conn, std::forward<Handler>(const_cast<Handler&>(handler)),
-				// returns NULL on failure
-				!::mysql_real_connect(&conn.handle,
-					endpoint.address().to_string().c_str(),
-					user.c_str(),
-					password.c_str(),
-					schema.c_str(),
-					endpoint.port(),
-					0,
-					flags));
-		});
+		workIoService.post(lambdaBind(
+			[this, &conn, endpoint, user, password, schema, flags] (Handler&& handler) {
+				auto error = !::mysql_real_connect(
+						&conn.handle, endpoint.address().to_string().c_str(), user.c_str(),
+						password.c_str(), schema.c_str(), endpoint.port(), 0, flags);
+
+				postHandlerOrError(conn, std::move(handler), error);
+			},
+			std::forward<Handler>(handler)
+		));
 	}
 
 	// TODO implement this
@@ -120,39 +125,50 @@ public:
 	}
 
 	template <class Handler>
-	void prepareQuery(ConnectionImpl& conn, const std::string& stmtStr, Handler&& handler)
+	void prepareQuery(ConnectionImpl& conn, const std::string& stmt, Handler&& handler)
 	{
-		workIoService.post([=, &conn]{
-			PreparedHandle stmt{::mysql_stmt_init(&conn.handle), StmtDeleter()};
+		workIoService.post(lambdaBind(
+			[this, &conn, stmt] (Handler&& handler) {
+				PreparedHandle stmtPtr{::mysql_stmt_init(&conn.handle), StmtDeleter()};
 
-			if(!stmt)
-				return postErrorHandler(stmt, handler, stmt);
-
-			postHandlerOrError(stmt, handler, stmt,
-				::mysql_stmt_prepare(stmt.get(), stmtStr.data(), stmtStr.length()));
-		});
+				if(stmtPtr){
+					auto error = ::mysql_stmt_prepare(stmtPtr.get(), stmt.data(), stmt.length());
+					postHandlerOrError(stmtPtr, std::move(handler), error, std::move(stmtPtr));
+				} else {
+					postError(stmtPtr, std::move(handler), std::move(stmtPtr));
+				}
+			},
+			std::forward<Handler>(handler)
+		));
 	}
 
 	template <class Handler, class... Values>
-	void executePrepared(ConnectionImpl& conn,
+	void executePrepared(ConnectionImpl&,
 			PreparedHandle& stmt,
 			const std::tuple<Values...>* values,
 			Handler&& handler)
 	{
-		workIoService.post([=, &conn]{
-			assert(mysql_stmt_param_count(stmt.get()) == sizeof...(Values) &&
-					"invalid param count");
+		workIoService.post(lambdaBind(
+			[this, stmt, values] (Handler&& handler){
+				assert(mysql_stmt_param_count(stmt.get()) == sizeof...(Values) &&
+						"invalid param count");
 
-			MYSQL_BIND params[sizeof...(Values)] = {}; // zero fill
+				MYSQL_BIND params[sizeof...(Values)];
+				memset(params, 0, sizeof(params));
 
-			fillParams(params, values);
+				fillParams(params, values);
 
-			// both functions return != 0 on failure
-			if(::mysql_stmt_bind_param(stmt.get(), params) || ::mysql_stmt_execute(stmt.get()))
-				return postErrorHandler(stmt, handler, ResultSet::emptySet());
+				bool error = ::mysql_stmt_bind_param(stmt.get(), params) ||
+							 ::mysql_stmt_execute(stmt.get());
 
-			std::cout << "Rows: " << mysql_stmt_affected_rows(stmt.get());
-		});
+				if(error){
+					postError(stmt, handler, ResultSet::emptySet());
+				} else{
+					std::cout << "Rows: " << mysql_stmt_affected_rows(stmt.get()) << std::endl;
+				}
+			},
+			std::forward<Handler>(handler)
+		));
 	}
 
 	// we won't implement cancellation until needed, its actually difficult to think about
@@ -180,39 +196,39 @@ private:
 	template <class Handler, class... Args>
 	void postHandler(Handler&& handler, Args&&... args)
 	{
-		get_io_service().post(makeLambda(std::forward<Handler>(handler),
-				std::forward<Args>(args)...));
+		get_io_service().post(lambdaBind(
+				std::forward<Handler>(handler), std::forward<Args>(args)...));
 	}
 
 	template <class Source, class Handler, class Error, class... Args>
-	void postHandlerOrError(Source& src, Handler&& handler,  Args&&... args, Error e)
+	void postHandlerOrError(Source& src, Handler&& handler, Error e, Args&&... args)
 	{
 		if(e)
-			postErrorHandler(src, std::forward<Handler>(handler), std::forward<Args>(args)...);
+			postError(src, std::forward<Handler>(handler), std::forward<Args>(args)...);
 		else
 			postHandler(std::forward<Handler>(handler), boost::system::error_code(),
 					std::forward<Args>(args)...);
 	}
 
 	template <class Handler, class... Args>
-	void postErrorHandler(ConnectionImpl& conn, Handler&& handler, Args&&... args)
+	void postError(ConnectionImpl& conn, Handler&& handler, Args&&... args)
 	{
-		doPostErrorHandler(std::forward<Handler>(handler),
+		doPostError(std::forward<Handler>(handler),
 				::mysql_errno(&conn.handle), std::forward<Args>(args)...);
 	}
 
 	template <class Handler, class... Args>
-	void postErrorHandler(PreparedHandle& stmt, Handler&& handler, Args&&... args)
+	void postError(const PreparedHandle& stmt, Handler&& handler, Args&&... args)
 	{
-		doPostErrorHandler(std::forward<Handler>(handler),
+		doPostError(std::forward<Handler>(handler),
 				::mysql_stmt_errno(stmt.get()), std::forward<Args>(args)...);
 	}
 
 	template <class Handler, class... Args>
-	void doPostErrorHandler(Handler&& handler, uint e, Args&&... args)
+	void doPostError(Handler&& handler, uint e, Args&&... args)
 	{
 		postHandler(std::forward<Handler>(handler),
-				boost::system::error_code(static_cast<int>(e), getErrorCategory()),
+				boost::system::error_code((int)(e), getErrorCategory()),
 				std::forward<Args>(args)...);
 	}
 
@@ -222,13 +238,7 @@ private:
 };
 
 
-/// shared_ptr<mysql_stmt> deleter
-struct StmtDeleter{
-	void operator()(MYSQL_STMT* stmt)
-	{
-		::mysql_stmt_close(stmt);
-	}
-};
+
 
 
 } /* namespace mysql */

@@ -69,10 +69,10 @@ public:
 	}
 
 	template <class Handler, class ValueTuple>
-	void executePrepared(const PreparedHandle& stmt, ValueTuple* values, Handler&& handler)
+	void executePrepared(PreparedHandle& stmt, const ValueTuple* values, Handler&& handler)
 	{
 		get_service().executePrepared(get_implementation(),
-				values, std::forward<Handler>(handler));
+				stmt, values, std::forward<Handler>(handler));
 	}
 
 	/// Signals the active operation to be canceled as soon as possible
