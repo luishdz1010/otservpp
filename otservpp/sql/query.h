@@ -88,7 +88,7 @@ public:
 	 * can come up during this process, execute() stops at the first error.
 	 *
 	 * \note This function is thread-safe when used like execute(val1, val2, ...) and it is also
-	 * thread-safe in the execute(shared_ptr<tuple<..>>) version provided nobody else is writting
+	 * thread-safe in the execute(shared_ptr<tuple<..>>) version provided nobody else is writing
 	 * to the tuple's elements until the handler is dispatched.
 	 */
 	template <class Handler, class... Values>
@@ -164,11 +164,11 @@ private:
 	template <class Control>
 	void executePrepared(Connection::PreparedHandle& stmt, Control& control, ConnectionPtr& conn)
 	{
-		conn->executePrepared(stmt, control.getValues(), [control, conn]
+		/*conn->runPrepared(stmt, control.getValues(), [control, conn]
 		(const boost::system::error_code& e, ResultSet& res){
 			control->handler(e, res);
 			// connection dies here and is returned to the pool
-		});
+		});*/
 	}
 
 	boost::shared_mutex mutex;

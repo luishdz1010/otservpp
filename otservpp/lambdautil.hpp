@@ -6,14 +6,38 @@
 /*! \file
  * Contains some utilities and compiler workarounds for efficient use of C++11 lamdbas
  */
+template <class... T> struct def_arg;
+
+template <class T1> struct def_arg<T1>{ typedef T1 arg1_type; };
+
+template <class T1, class T2> struct def_arg<T1, T2> :
+	public def_arg<T1>{ typedef T2 arg2_type; };
+
+template <class T1, class T2, class T3> struct def_arg<T1, T2, T3> :
+	public def_arg<T1, T2>{ typedef T3 arg3_type; };
+
+/*template <int N, class... T> struct def_arg;
+
+template <class T1> struct def_arg<1, T1>{ typedef T1 arg1_type; };
+
+template <class T1, class T2> struct def_arg<2, T1, T2> :
+	public def_arg<1, T1>{ typedef T2 arg2_type; };
+
+template <class... T, class T3> struct def_arg<3, T..., T3> :
+	public def_arg<2, T...>{ typedef T3 arg3_type; };
+
+template <class... T, class T4> struct def_arg<4, T..., T4> :
+	public def_arg<3, T...>{ typedef T4 arg4_type; };*/
+
 
 template <class Lambda> struct function_traits :
 public function_traits<decltype(&Lambda::operator())> {};
 
 /// similar to boost::function_traits but works with everything
 template <class Ret, class... Args>
-struct function_traits<Ret(Args...)>{
+struct function_traits<Ret(Args...)> : public def_arg</*sizeof...(Args), */Args...>{
 	typedef Ret result_type;
+
 	enum{ arity = sizeof...(Args) };
 };
 
@@ -41,21 +65,24 @@ struct LambdaTraits : public function_traits<T> {};
  * C++ lambdas cannot capture by "move", this is sometimes an inconvenient. Here we simply
  * emulate captures by storing the arguments inside the object and passing them to the
  * lambda when it is executed (alongside with the arguments received). This works similar to
- * std::bind but its less verbose. Some examples:
+ * std::bind. It also allows us to workaround some GCC (and possible other untested compilers)
+ * limitations while unpacking parameter packs on lambda captures.
+ * Some examples:
  * \code
  *  template <class... Args>
  * 	void foo(Args&&... args)
  * 	{
- * 		// perfect forwards args... to bar()
- * 		lambdaBind([](Args&&... args){ // take by &&
- * 			bar(std::forward<Args>(args)...);
+ * 		// forwards args... to bar(), a capture(move/copy) of args must be done but after that
+ * 		// we can freely move-out the pack
+ * 		lambdaBind([](Args&&... args){
+ * 			bar(std::move<Args>(args)...);
  * 		}, std::forward<Args>(args)...)();
  * 	}
  * 	...
  * 	// parameters passed in the call site are appended to the right
- * 	lambdaBind(1, 2, [](int one, int two, int three){})(3);
+ * 	lambdaBind([](int one, int two, int three){}, 1, 2)(3);
  *	...
- *	lambdaBind(std::move(foo), [](Foo& foo){
+ *	lambdaBind(std::move(foo), [](Foo&& foo){ // take by && or Foo if moving
  *		return bar(std::move(foo)); // works with return types
  *	});
  * \endcode
@@ -122,6 +149,11 @@ lambdaBind(L&& lambda, Captures&&... args)
 	return {std::forward<L>(lambda), std::forward<Captures>(args)...};
 }
 
+/*! Simple class for doing some RAII with lambdas
+ * Using this like \code static auto foo = makeScopedScoperation(A, B); \endcode you can
+ * statically-thread-safe call A once while entering the scope and B during the program
+ * shutdown. But it is probably more useful for tiny in-need-for exception safe code :)
+ */
 template <class Destructor>
 class ScopedOperation{
 public:
