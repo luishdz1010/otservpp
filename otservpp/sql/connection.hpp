@@ -27,6 +27,12 @@ public:
 	typedef typename impl::PreparedHandle PreparedHandle;
 	typedef typename impl::ResultSet ResultSet;
 
+	template <class... T>
+	using Row = typename impl::template Row<T...>;
+
+	template <class... T>
+	using RowSet = typename impl::template RowSet<T...>;
+
 	/// Creates a new connection object that isn't connected to any database
 	BasicConnection(boost::asio::io_service& ioService) :
 		boost::asio::basic_io_object<SqlService>(ioService)
@@ -68,16 +74,30 @@ public:
 				stmt, std::forward<Handler>(handler));
 	}
 
-	template <class Handler, class ValueTuple>
-	void executePrepared(PreparedHandle& stmt, const ValueTuple* values, Handler&& handler)
+	template <class Handler, class... In, class... Out>
+	void runPrepared(PreparedHandle& stmt,
+			const std::tuple<In...>& in,
+			std::tuple<Out...>& out,
+			Handler&& handler)
 	{
-		get_service().executePrepared(get_implementation(),
-				stmt, values, std::forward<Handler>(handler));
+		get_service().runPrepared(get_implementation(),
+				stmt, in, out, std::forward<Handler>(handler));
+	}
+
+	template <class Handler, class... In, class... Out>
+	void runPrepared(PreparedHandle& stmt,
+			const Row<In...>& in,
+			RowSet<Out...>& out,
+			Handler&& handler)
+	{
+		get_service().runPrepared(get_implementation(),
+				stmt, in, out, std::forward<Handler>(handler));
 	}
 
 	/// Signals the active operation to be canceled as soon as possible
 	/// If the operation could be canceled the operation's handler is called with a
 	/// boost::asio::operation_aborted error code, otherwise the operation is called normally.
+	/// \note This is not yet implemented
 	void cancel()
 	{
 		get_service().cancel(get_implementation());

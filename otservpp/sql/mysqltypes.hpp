@@ -1,14 +1,26 @@
 #ifndef OTSERVPP_SQL_MYSQLTYPES_HPP_
 #define OTSERVPP_SQL_MYSQLTYPES_HPP_
 
-#include <mysql/mysql_com.h>
 #include <string>
+#include <vector>
+#include <tuple>
+#include <mysql/mysql_com.h>
 
 /*! \file
  * This file contains some helper templates that aid in the creation of MySql prepared
  * statements. The only public stuff here are the MySQL types that are exported in sql.hpp.
  */
 namespace otservpp{ namespace sql{ namespace mysql{
+
+template <class... T>
+using Row = std::tuple<T...>;
+
+template <class... T>
+using RowSet = std::vector<Row<T...>>;
+
+struct Null{
+	constexpr explicit operator bool() { return false; }
+};
 
 template <enum_field_types T>
 struct SqlType{
@@ -17,33 +29,40 @@ struct SqlType{
 
 template <class T> struct CppToSql;
 
-template <> struct CppToSql<char> 				: public SqlType<MYSQL_TYPE_TINY> {};
+template <> struct CppToSql<signed char>		: public SqlType<MYSQL_TYPE_TINY> {};
 template <> struct CppToSql<unsigned char> 		: public SqlType<MYSQL_TYPE_TINY> {};
-template <> struct CppToSql<short> 				: public SqlType<MYSQL_TYPE_SHORT> {};
+template <> struct CppToSql<signed short> 		: public SqlType<MYSQL_TYPE_SHORT> {};
 template <> struct CppToSql<unsigned short> 	: public SqlType<MYSQL_TYPE_SHORT> {};
-template <> struct CppToSql<int> 				: public SqlType<MYSQL_TYPE_LONG> {};
+template <> struct CppToSql<signed int> 		: public SqlType<MYSQL_TYPE_LONG> {};
 template <> struct CppToSql<unsigned int> 		: public SqlType<MYSQL_TYPE_LONG> {};
-template <> struct CppToSql<long long> 			: public SqlType<MYSQL_TYPE_LONGLONG> {};
+template <> struct CppToSql<signed long long>	: public SqlType<MYSQL_TYPE_LONGLONG> {};
 template <> struct CppToSql<unsigned long long> : public SqlType<MYSQL_TYPE_LONGLONG> {};
-
 template <> struct CppToSql<float> 				: public SqlType<MYSQL_TYPE_FLOAT>{};
 template <> struct CppToSql<double> 			: public SqlType<MYSQL_TYPE_DOUBLE>{};
 
 template <> struct CppToSql<std::string>		: public SqlType<MYSQL_TYPE_STRING> {};
 
 
+/// Tiny class for holding null-able values, similar to boost::optional
 template <class T, class SqlT = CppToSql<T>>
 struct Wrapper : public SqlT{
 public:
-	template <class... U>
-	Wrapper(U&&... u) :
-		value(std::forward<U>(u)...)
+	Wrapper(){}
+
+	Wrapper(const Null&){}
+
+	template <class U, class... V>
+	Wrapper(U&& u, V&&... v) :
+		value(std::forward<U>(u), std::forward<V>(v)...),
+		null(false)
 	{}
 
-	template <class U>
-	auto operator=(U&& u)-> decltype(std::declval<U>().operator=(std::forward<U>(u)))
+	Wrapper(const Wrapper&) = default;
+	Wrapper(Wrapper&&) = default;
+
+	bool isNull()
 	{
-		return value.operator=(std::forward<U>(u));
+		return null;
 	}
 
 	const T& get() const
@@ -56,6 +75,24 @@ public:
 		return value;
 	}
 
+	template <class U>
+	auto operator=(U&& u)-> decltype(std::declval<T>().operator=(std::forward<U>(u)))
+	{
+		null = false;
+		return value.operator=(std::forward<U>(u));
+	}
+
+	const Null& operator=(const Null& n)
+	{
+		null = true;
+		return n;
+	}
+
+	explicit operator bool()
+	{
+		return !null;
+	}
+
 	explicit operator T()
 	{
 		return value;
@@ -63,10 +100,9 @@ public:
 
 private:
 	T value;
+	my_bool null = true;
 };
 
-
-struct Null{};
 
 typedef Wrapper<char> TinyInt;
 typedef Wrapper<unsigned char> UTinyInt;
@@ -84,79 +120,285 @@ typedef Wrapper<std::string> String;
 typedef Wrapper<std::string, SqlType<MYSQL_TYPE_BLOB>> Blob;
 
 
+struct BindOutReg{
+	my_bool error;
+	my_bool null;
+	unsigned long length;
+};
+
+
 template <class T>
-inline typename std::enable_if<std::is_scalar<T>::value>::type
-fillBuffer(MYSQL_BIND& bind, const T& value)
+inline typename std::enable_if<std::is_integral<T>::value>::type
+bindBuffer(MYSQL_BIND& bind, const T& value)
 {
-	bind.buffer = static_cast<void*>(&value);
+	bind.buffer = (void*)&value;
 	bind.is_unsigned = std::is_unsigned<T>::value;
 }
 
 template <class T>
 inline typename std::enable_if<std::is_floating_point<T>::value>::type
-fillBuffer(MYSQL_BIND& bind, const T& value)
+bindBuffer(MYSQL_BIND& bind, const T& value)
 {
-	bind.buffer = static_cast<void*>(&value);
+	bind.buffer = (void*)&value;
 }
 
-inline void fillBuffer(MYSQL_BIND& bind, const std::string& str)
+inline void bindBuffer(MYSQL_BIND& bind, const std::string& str)
 {
-	bind.buffer = static_cast<void*>(const_cast<char*>(str.data()));
-	// ok, mysql C API is completely retarded, for some reason we need to specify the buffer
-	// length as a pointer, if we do that we will need some helper structs for this tiny stupid
-	// thing. But here's the catch: it appears that if you left length as 0, buffer_length
-	// is used instead, this doesn't really matter for us because we always re-bind on every
-	// execution, so we will left it as is
-	bind.buffer_length = str.length();//str.capacity();
-	//bind.length = str.length();
+	bind.buffer = (void*)str.data();
+	bind.buffer_length = str.length();
 }
 
-inline void fill(MYSQL_BIND& bind, Null)
+// string/blob buffer will be fetched after we know the actual size
+inline void bindBuffer(MYSQL_BIND& bind, std::string&)
+{
+	bind.buffer = 0;
+	bind.buffer_length = 0;
+}
+
+
+inline void bindOne(MYSQL_BIND& bind, const Null&) // don't allow bind Null's on results
 {
 	bind.buffer_type = MYSQL_TYPE_NULL;
 }
 
 template <class T, enum_field_types SqlT = CppToSql<T>::SqlT>
-inline void fill(MYSQL_BIND& bind, const T& value)
+inline void bindOne(MYSQL_BIND& bind, const T& value)
 {
 	bind.buffer_type = SqlT;
-	fillBuffer(bind, value);
+	bindBuffer(bind, value);
+}
+
+template <class T, enum_field_types SqlT = CppToSql<T>::SqlT>
+inline void bindOne(MYSQL_BIND& bind, T& value)
+{
+	bind.buffer_type = SqlT;
+	bindBuffer(bind, value);
 }
 
 template <class T>
-inline void fill(MYSQL_BIND& bind, const Wrapper<T>& value)
+inline void bindOne(MYSQL_BIND& bind, const Wrapper<T>& value)
 {
-	fill(bind, value.get());
+	if(value.isNull())
+		bind.buffer_type = MYSQL_TYPE_NULL;
+	else
+		bindOne(bind, value.get());
 }
 
-inline void fill(MYSQL_BIND& bind, const Blob& blob)
+// result wrappers are always null because we are actually filling them
+template <class T>
+inline void bindOne(MYSQL_BIND& bind, Wrapper<T>& value)
+{
+	bindOne(bind, value.get());
+}
+
+inline void bindOne(MYSQL_BIND& bind, const Blob& blob)
 {
 	bind.buffer_type = Blob::SqlT;
-	fillBuffer(bind, blob.get());
+	bindBuffer(bind, blob.get());
 }
+
+inline void bindOne(MYSQL_BIND& bind, Blob& blob)
+{
+	bind.buffer_type = Blob::SqlT;
+	bindBuffer(bind, blob.get());
+}
+
+
+template <class T>
+inline void bindOneResult(MYSQL_BIND& bind, T& result, BindOutReg& reg)
+{
+	bind.error = &reg.error;
+	bind.length = &reg.length;
+	bind.is_null = &reg.null;
+	bindOne(bind, result);
+}
+
+
+template<class T>
+inline void bindOneResultBuffer(MYSQL_BIND& bind, T& result)
+{
+	bindBuffer(bind, result);
+}
+
+template<class T>
+inline void bindOneResultBuffer(MYSQL_BIND& bind, Wrapper<T>& result)
+{
+	bindBuffer(bind, result.get());
+}
+
 
 template <int pos, class Tuple>
 inline typename std::enable_if<pos == 0>::type
-fillParams(MYSQL_BIND* bind, const Tuple* values)
+bindParams(MYSQL_BIND* bind, const Tuple& params)
 {
-	fill(bind[0], std::get<0>(*values));
+	bindOne(bind[0], std::get<0>(params));
 }
 
 template <int pos, class Tuple>
 inline typename std::enable_if<(pos > 0)>::type
-fillParams(MYSQL_BIND* bind, const Tuple* values)
+bindParams(MYSQL_BIND* bind, const Tuple& params)
 {
-	fill(bind[pos], std::get<pos>(*values));
-	fillParams<pos-1>(bind, values);
+	bindOne(bind[pos], std::get<pos>(params));
+	bindOne<pos-1>(bind, params);
 }
 
-/// Fills the given MYSQL_BIND structure with the given values recursively.
-/// All the other fill* functions form part of the job of this function.
-template <class... Values>
-inline void fillParams(MYSQL_BIND* bind, const std::tuple<Values...>* values)
+
+template <int pos, class Tuple>
+inline typename std::enable_if<pos == 0>::type
+bindResult(MYSQL_BIND* bind, Tuple& result, BindOutReg* reg)
 {
-	fillParams<sizeof...(Values)-1>(bind, values);
+	bindOneResult(bind[0], std::get<0>(result), reg[0]);
 }
+
+template <int pos, class Tuple>
+inline typename std::enable_if<(pos > 0)>::type
+bindResult(MYSQL_BIND* bind, Tuple& result, BindOutReg* reg)
+{
+	bindOneResult(bind[pos], std::get<pos>(result), reg[pos]);
+	bindResult<pos-1>(bind, result, reg);
+}
+
+
+// these are used for loop-binding, we only need to update the buffers
+template <int pos, class Tuple>
+inline typename std::enable_if<pos == 0>::type
+bindResultBuffer(MYSQL_BIND* bind, Tuple& result)
+{
+	bindOneResultBuffer(bind[0], std::get<0>(result));
+}
+
+template <int pos, class Tuple>
+inline typename std::enable_if<(pos > 0)>::type
+bindResultBuffer(MYSQL_BIND* bind, Tuple& result)
+{
+	bindOneResultBuffer(bind[pos], std::get<pos>(result));
+	bindResultBuffer<pos-1>(bind, result);
+}
+
+// non-wrapper types cannot be null, and if a truncation error occurs we must report, otherwise
+// do nothing as theyre already converted
+template <int col, class T>
+inline bool storeOneResult(MYSQL_BIND&, MYSQL_STMT*, BindOutReg& reg, T&)
+{
+	return !reg.null && !reg.error;
+}
+
+// string can be null without the need for a wrapper
+template <int col>
+inline bool storeOneResult(MYSQL_BIND& bind, MYSQL_STMT* stmt, BindOutReg& reg, std::string& str)
+{
+	if(reg.length > 0){
+		std::vector<char> buffer(reg.length);
+		bind.buffer = (void*)&buffer[0];
+		bind.buffer_length = reg.length;
+
+		if(mysql_stmt_fetch_column(stmt, &bind, col, 0))
+			return false;
+
+		str.assign(buffer.begin(), buffer.end());
+	}
+
+	return true;
+}
+
+template <int col, class T>
+inline bool storeOneResult(MYSQL_BIND& b, MYSQL_STMT* s, BindOutReg& reg, Wrapper<T>& value)
+{
+	return reg.null? !(value=Null()) : storeOneResult(b, s, reg, value);
+}
+
+
+template <int pos, class Tuple>
+inline typename std::enable_if<pos == 0, bool>::type
+storeResult(MYSQL_BIND* bind, MYSQL_STMT* stmt, BindOutReg* reg, Tuple& result)
+{
+	return storeOneResult<0>(bind[0], stmt, reg[0], std::get<0>(result));
+}
+
+template <int pos, class Tuple>
+inline typename std::enable_if<(pos > 0), bool>::type
+storeResult(MYSQL_BIND* bind, MYSQL_STMT* stmt, BindOutReg* reg, Tuple& result)
+{
+	if(!storeOneResult<pos>(bind[pos], stmt, reg[pos], std::get<pos>(result)))
+		return false;
+	return storeResult<pos-1>(bind, stmt, reg, result);
+}
+
+// mysql_bind_[param|result] helpers follow
+template <int size>
+struct Bind{
+	MYSQL_BIND it[size];
+	Bind()
+	{
+		memset(it, 0, sizeof(it));
+	}
+
+	MYSQL_BIND* get()
+	{
+		return it;
+	}
+};
+
+template <class... T> struct BindInHelper;
+
+template <class... In>
+struct BindInHelper<Row<In...>> : public Bind<sizeof...(In)>{
+	BindInHelper(const Row<In...>* params)
+	{
+		bindParams<sizeof...(In)-1>(this->it, *params);
+	}
+};
+
+template <int size>
+struct BindOutHelperBase : public Bind<size>{
+	BindOutReg reg[size];
+
+	BindOutHelperBase()
+	{
+		memset(reg, 0, sizeof(reg));
+	}
+};
+
+template <class... T> struct BindOutHelper;
+
+template <class... Out>
+struct BindOutHelper<Row<Out...>> : public BindOutHelperBase<sizeof...(Out)>{
+	enum{ size = sizeof...(Out) };
+	Row<Out...>& result;
+
+	BindOutHelper(Row<Out...>* res) :
+		result(*res)
+	{
+		bindResult<size-1>(this->it, result, this->reg);
+	}
+
+	bool store(MYSQL_STMT* stmt)
+	{
+		return storeResult<size-1>(this->it, stmt, this->reg, result);
+	}
+};
+
+template <class... Out>
+struct BindOutHelper<RowSet<Out...>> : public BindOutHelperBase<sizeof...(Out)>{
+	enum{ size = sizeof...(Out) };
+
+	Row<Out...> holder;
+	RowSet<Out...>& result;
+
+	BindOutHelper(RowSet<Out...>* res) :
+		result(*res)
+	{
+		bindResult<size-1>(this->it, holder, this->reg);
+	}
+
+	bool store(MYSQL_STMT* stmt)
+	{
+		auto& row = *result.emplace(result.end());
+		bindResultBuffer<size-1>(this->it, row);
+
+		return storeResult<size-1>(this->it, stmt, this->reg, row);
+	}
+};
 
 } /* namespace mysql */
 } /* namespace sql */

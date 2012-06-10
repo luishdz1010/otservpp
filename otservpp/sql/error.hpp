@@ -32,7 +32,7 @@ enum class Error{
 	version_error = CR_VERSION_ERROR,
 
 	/// MySQL client ran out of memory
-	out_of_memory = CR_OUT_OF_MEMORY,
+	OutOfMemory = CR_OUT_OF_MEMORY,
 
 	/// Wrong host info
 	wrong_host_info = CR_WRONG_HOST_INFO,
@@ -180,6 +180,14 @@ enum class Error{
 
 	/// This feature is not implemented yet
 	not_implemented = CR_NOT_IMPLEMENTED,
+
+
+	// Custom errors follow
+	/// The number of fields that the query will return is different from the expected
+	BadFieldCount = CR_ERROR_LAST+1,
+
+	/// The returned result set is to big to hold in memory
+	ResultIsTooBig
 };
 
 

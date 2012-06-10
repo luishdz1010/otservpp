@@ -1,0 +1,41 @@
+Async SQL spec
+Most queries should make use of the template API (using tuples) for fast, prepared, injection-safe, type-safe queries. A more versatile pair of classes, QueryParams and ResulSet are provided for "polymorphic" runtime queries, but that is not a priority, yet. 
+
+Un-prepared (i.e. plain old) queries are at the very bottom on the list, actually, deeper.
+
+Common
+    prepareQuery(string) -> PreparedHandler
+    Simple idenfitifer that can be used with both template api and dynamic api
+    
+Template API
+    // simple query with no params and no result (update, delete, etc)
+   #1 runSimple(query)-> (error, int rows affected)
+   // simple query with one result
+   #2 runSimple(query, tuple<out..>)-> (error, int rowCoun)
+   // simple query with many results
+   #3 runSimple(query, vector<tuple<out..>>)-> (error) 
+   
+   // query with paramters and no result
+   #4 runPrepared(query, tuple<in...>)-> (error, int rows affected)
+   // query with paramters and storing one result 
+   #5 pornrunPrepared(query, tuple<in..>, tuple<out...>)-> (error, int rowCount)
+   // query with parameters and stroing all results
+   #6 runPrepared(query, tuple<in..>, vector<tuple<out...>>)-> (error)
+   
+   // batch query with no result
+   #7 runBatch(query, vector<tuple<in...>>)-> (error, vector<int>)
+   // batch query with one result on every execution
+   #8 runBatch(query, vector<tuple<in...>>, vector<tuple<out...>>)-> 
+        (error, vector<int> rowCount)
+   // batch query with many results on every execution
+   #9 runBatch(query, vector<tuple<in...>>, 
+                             vector<vector<tuple<out...>>>)-> (error)
+    
+   Order of relevance: #5, #6, #4, #1, as-needed
+
+Dynamic API
+    // one function for all casses, just like plain old JDBC
+    runDynamic(query, QueryParams)-> (error, ResultSet)
+    
+    
+    
