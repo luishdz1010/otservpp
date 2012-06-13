@@ -190,7 +190,6 @@ enum class Error{
 	ResultIsTooBig
 };
 
-
 class SqlErrorCategory : public boost::system::error_category{
 public:
 	SqlErrorCategory(){}

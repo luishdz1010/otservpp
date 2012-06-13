@@ -4,8 +4,7 @@
 #include <deque>
 #include <algorithm>
 #include <boost/asio/strand.hpp>
-#include "sql.hpp"
-#include "connection.hpp"
+#include "sqldcl.hpp"
 
 namespace otservpp{ namespace sql{
 

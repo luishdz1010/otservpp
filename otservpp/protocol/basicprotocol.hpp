@@ -5,10 +5,10 @@
 
 namespace otservpp {
 
-/*! Base class for most protocols
- * A protocol represents the intentions of a remote peer by means of a Connection
+/*! Base class for all protocols
+ * A protocol represents the intentions of a remote client by the means of a Connection
  */
-template <typename Protocol>
+template <class Protocol>
 class BasicProtocol{
 public:
 	typedef ConnectionPtr<Protocol> ConnectionPtrType;
@@ -16,12 +16,6 @@ public:
 	BasicProtocol(const ConnectionPtrType& conn) :
 		connection(conn)
 	{}
-
-	/// Should be implemented if the underlying protocol isn't a one-packet protocol
-	void handleMessage(const typename ProtocolTraits<Protocol>::IncomingMessage&)
-	{
-		assert(false);
-	}
 
 	/// Overrides must call this base implementation,
 	void connectionLost()
@@ -41,6 +35,17 @@ public:
 
 protected:
 	~BasicProtocol() = default;
+
+	void handlePacketException()
+	{
+		LOG(INFO) << "invalid packet received" << droppingLogInfo();
+		connection->close();
+	}
+
+	std::string droppingLogInfo()
+	{
+		return connection->logInfo() + ", dropping connection";
+	}
 
 	ConnectionPtrType connection;
 };

@@ -127,12 +127,12 @@ public:
 	/// \note This function is thread-safe
 	void stop()
 	{
-		closeStatus = ReadClosed | WriteClosed;
 		impl->strand.dispatch([this]{
+			closeStatus = ReadClosed | WriteClosed;
 			VLOG(1) << "stopping connection" << this->logInfo();
 			impl->readTimer.cancel();
 			impl->writeTimer.cancel();
-			impl->peer.shutdown(TcpSocket::shutdown_both);
+			impl->peer.shutdown(boost::asio::ip::tcp::socket::shutdown_both);
 			impl->peer.close();
 			protocol.reset();
 		});
@@ -169,6 +169,11 @@ public:
 		return closeStatus & (ReadClosed | WriteClosed);
 	}
 
+	bool isAlive()
+	{
+		return !isStopped() && impl->peer.is_open();
+	}
+
 	/// Returns the peers IP address
 	boost::asio::ip::address getPeerAddress()
 	{
@@ -196,19 +201,29 @@ public:
 		trySendOrEnqueueThen(std::forward<Message>(msg), [this]{ stop(); });
 	}
 
-	Connection(Connection&) = delete;
-	void operator=(Connection&) = delete;
-
-private:
-	using std::enable_shared_from_this<Connection>::shared_from_this;
-
-	const char* logInfo()
+	std::string logInfo()
 	{
 		std::ostrstream s;
 		s << " on " << getPeerAddress() << " with "
 				<< (protocol? protocol->getName() : "no protocol");
 		 return s.str();
 	}
+
+	std::string droppingLogInfo()
+	{
+		return logInfo() + ", dropping connection";
+	}
+
+	std::string handlePacketException()
+	{
+
+	}
+
+	Connection(Connection&) = delete;
+	void operator=(Connection&) = delete;
+
+private:
+	using std::enable_shared_from_this<Connection>::shared_from_this;
 
 	/// Helper for dispatching the first messages to the protocol
 	struct ProtocolFirstMessageHandler{
@@ -231,30 +246,32 @@ private:
 
 		auto sthis = shared_from_this();
 
-		// strand wrapping is in asyncRead.
-		// note: 'this->func(x)' inside lambdas is needed for some reason in gcc
+		// strand wrapping is in asyncRead
 		asyncRead(inMsg.getHeaderBuffer(), [=](){
 			this->updateReadTimer();
 
-			this->asyncRead(inMsg.parseHeaderAndGetBodyBuffer(), [=](){
-				assert(sthis);
-				impl->readTimer.cancel();
-				inMsg.parseBody();
+			try{
+				this->asyncRead(inMsg.parseHeaderAndGetBodyBuffer(), [=](){
+					impl->readTimer.cancel();
+					inMsg.parseBody();
 
-				//DVLOG(1) << "handling message " << inMsg << this->logInfo();
+					//DVLOG(1) << "handling message " << inMsg << this->logInfo();
 
-				try{
-					ProtocolHandler::sendInMsg(this);
-				}catch(std::exception& e){
-					LOG(ERROR) << "exception caught during "
-							<< (protocol? protocol->getName() : "no protocol")
-							<< " execution, dropping connection. What: " << e.what();
-					return this->stop();
-				}
+					try{
+						ProtocolHandler::sendInMsg(this);
+					}catch(std::exception& e){
+						LOG(ERROR) << "exception caught during "
+								<< (protocol? protocol->getName() : "no protocol")
+								<< " execution, dropping connection. What: " << e.what();
+						return this->stop();
+					}
 
-				if(this->isReceiving())
-					this->parseIncomingMessage<ProtocolMessageHandler>();
-			});
+					if(this->isReceiving())
+						this->parseIncomingMessage<ProtocolMessageHandler>();
+				});
+			} catch(std::exception&){
+				LOG(INFO) << "couldn't obtain the packet header"
+			}
 		});
 	}
 
@@ -271,7 +288,7 @@ private:
 
 				body();
 			} else {
-				DLOG_IF(ERROR, e != boost::asio::error::operation_aborted) << "read error "
+				VLOG_IF(1, e != boost::asio::error::operation_aborted) << "read error "
 						<< e << " after " << bytesRead << " bytes read" <<  this->logInfo();
 				this->abort(e);
 			}

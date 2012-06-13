@@ -13,8 +13,6 @@
 
 namespace otservpp{ namespace sql{ namespace mysql{
 
-struct StmtDeleter;
-
 typedef int Id;
 typedef MYSQL* Handle;
 typedef std::shared_ptr<MYSQL_STMT> PreparedHandle;
@@ -47,7 +45,7 @@ struct ConnectionImpl{
 	using RowSet = typename mysql::RowSet<T...>;
 
 	ConnectionImpl() :
-		threadEndFlag((void*)0, noOp)
+		threadEndFlag((void*)0, &noOp)
 		//cancelFlag(false)
 	{}
 
@@ -82,11 +80,21 @@ struct StmtDeleter{
  */
 class Service : public boost::asio::io_service::service{
 public:
-	/// The id of the service as required by io_service::service
-	static boost::asio::io_service::id id;
-
 	/// Required by asio::basic_io_object
 	typedef ConnectionImpl implementation_type;
+
+	/// Useful for clients
+	typedef mysql::TinyInt TinyInt;
+	typedef mysql::SmallInt SmallInt;
+	typedef mysql::Int Int;
+	typedef mysql::BigInt BigInt;
+	typedef mysql::Float Float;
+	typedef mysql::Double Double;
+	typedef mysql::String String;
+	typedef mysql::Blob Blob;
+
+	/// The id of the service as required by io_service::service
+	static boost::asio::io_service::id id;
 
 	explicit Service(boost::asio::io_service& ioService);
 

@@ -49,6 +49,9 @@ private:
 	boost::asio::strand strand;
 };
 
+/// Sems like a good place for this
+uint32_t adler32(uint8_t* data, int32_t len);
+
 /// XTEA cypher
 class Xtea{
 public:
@@ -56,9 +59,9 @@ public:
 
 	Xtea(uint32_t v0, uint32_t v1, uint32_t v2, uint32_t v3);
 
-	void decrypt(uint32_t* buffer, std::size_t lenght);
+	void decrypt(uint32_t* buffer, std::size_t lenght) const;
 
-	void encrypt(uint32_t* buffer, std::size_t lenght);
+	void encrypt(uint32_t* buffer, std::size_t lenght) const;
 
 private:
 	uint32_t key[4];

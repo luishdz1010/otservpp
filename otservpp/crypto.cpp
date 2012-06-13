@@ -2,6 +2,7 @@
 #include <openssl/rsa.h>
 #include <openssl/bn.h>
 #include <openssl/err.h>
+#include "lambdautil.hpp"
 
 namespace otservpp { namespace crypto{
 
@@ -9,7 +10,9 @@ boost::asio::io_service::id CryptoService::id;
 
 ErrorCategory::ErrorCategory()
 {
-	ERR_load_crypto_strings();
+	static struct Init{
+		Init(){ ERR_load_crypto_strings(); }
+	} init;
 }
 
 const char* ErrorCategory::name() const
@@ -28,11 +31,55 @@ const boost::system::error_category& errorCategory()
 	return c;
 }
 
+uint32_t adler32(uint8_t* data, int32_t len)
+{
+	assert(len != 0);
+
+	uint_fast32_t a = 1, b = 0;
+	int k;
+	while(len > 0)
+	{
+		k = len > 5552? 5552 : len;
+		len -= k;
+
+		while(k >= 16){
+			a += *data++; b += a;
+			a += *data++; b += a;
+			a += *data++; b += a;
+			a += *data++; b += a;
+			a += *data++; b += a;
+			a += *data++; b += a;
+			a += *data++; b += a;
+			a += *data++; b += a;
+			a += *data++; b += a;
+			a += *data++; b += a;
+			a += *data++; b += a;
+			a += *data++; b += a;
+			a += *data++; b += a;
+			a += *data++; b += a;
+			a += *data++; b += a;
+			a += *data++; b += a;
+			k -= 16;
+		}
+
+		if(k != 0){
+			do{
+				a += *data++; b += a;
+			} while (--k);
+		}
+
+		a %= 65521;
+		b %= 65521;
+	}
+
+	return (b << 16) | a;
+}
+
 Xtea::Xtea(uint32_t k0, uint32_t k1, uint32_t k2, uint32_t k3) :
 	key{k0, k1, k2, k3}
 {}
 
-void Xtea::decrypt(uint32_t* buffer, std::size_t lenght)
+void Xtea::decrypt(uint32_t* buffer, std::size_t lenght) const
 {
 	uint32_t k[4] {key[0], key[1], key[2], key[3]};
 
@@ -58,7 +105,7 @@ void Xtea::decrypt(uint32_t* buffer, std::size_t lenght)
 	}
 }
 
-void Xtea::encrypt(uint32_t* buffer, std::size_t lenght)
+void Xtea::encrypt(uint32_t* buffer, std::size_t lenght) const
 {
 	uint32_t k[4] {key[0], key[1], key[2], key[3]};
 

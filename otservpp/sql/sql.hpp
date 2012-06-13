@@ -2,29 +2,34 @@
 #define OTSERVPP_SQL_HPP_
 
 #include <memory>
-#include "connection.hpp"
+#include "sqldcl.hpp"
+#include "connectionpool.h"
+#include "query.h"
 
+/*!\file
+ * Useful file for inclusion in clients. It contains some typedefs in order to abstract the use
+ * of the underlying SQL service. We can later change the service without modifying clients.
+ */
 namespace otservpp{ namespace sql{
 
-template <class SqlService>
-class BasicConnection;
-
-struct OnDeleteReturnToPool;
-class ConnectionPool;
-class Query;
-class PreparedQuery;
-
-namespace mysql{
-
-class Service;
-class ResultSet;
-
-}
-
-typedef BasicConnection<mysql::Service> Connection;
 typedef Connection::ResultSet ResultSet;
+typedef Connection::Id ConnectionId;
+typedef Connection::PreparedHandle PreparedHandle;
 
-typedef std::shared_ptr<Connection> ConnectionPtr;
+typedef Connection::Service::TinyInt  TinyInt;
+typedef Connection::Service::SmallInt SmallInt;
+typedef Connection::Service::Int      Int;
+typedef Connection::Service::BigInt   BigInt;
+typedef Connection::Service::Float    Float;
+typedef Connection::Service::Double   Double;
+typedef Connection::Service::String   String;
+typedef Connection::Service::Blob     Blob;
+
+template <class... T>
+using Row = Connection::Row<T...>;
+
+template <class... T>
+using RowSet = Connection::RowSet<T...>;
 
 } /* namespace sql */
 } /* namespace otservpp */

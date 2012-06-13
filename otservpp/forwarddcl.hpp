@@ -54,6 +54,10 @@ class LoginProtocol;
 template <class Protocol>
 using ProtocolPtr = std::shared_ptr<Protocol>;
 
+class Account;
+
+typedef std::unique_ptr<Account> AccountPtr;
+
 } /* namespace otservpp */
 
 #endif // OTSERVPP_FORWARDDCL_HPP_

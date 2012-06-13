@@ -3,13 +3,12 @@
 
 #include <map>
 #include <boost/asio/strand.hpp>
-#include "sql.hpp"
 #include "connectionpool.h"
 
 namespace otservpp{ namespace sql{
 
 /*! Thread-safe class for executing multiple simple unparameterized queries with the same object
- *
+ * \todo implement this when needed
  */
 #if 0
 class SimpleQuery{
@@ -61,10 +60,8 @@ private:
  * there are tons of prepared statement declared all over the application, so the generated
  * overhead should be negligible.
  *
- * We use a std::map for the above purpose, but thats just for laziness, later it will probably
- * be changed to a simple array without a need for locking since we will always access different
- * indices. An issue with this though, is that we need to have a fixed connection size, so the
- * pool can't change its connection count without us going to hell.
+ * The physical connection can be interrupted at any time so we rely on the Connection class to
+ * modify its ID whenever that happens, after that we only need to re-prepare the statement.
  */
 class PreparedQuery{
 public:
@@ -172,7 +169,7 @@ private:
 	}
 
 	boost::shared_mutex mutex;
-	std::map<Connection::Id, Connection::PreparedHandle> stmtMap;
+	std::map<ConnectionId, PreparedHandle> stmtMap;
 	const std::string stmtStr;
 	ConnectionPool& connPool;
 };

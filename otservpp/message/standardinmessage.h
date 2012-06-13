@@ -24,29 +24,24 @@ public:
 	 */
 	boost::asio::mutable_buffers_1 parseHeaderAndGetBodyBuffer();
 
-	/*! Called by Connection when the body buffer is filled
-	 * Here we perform a basic adler32 chksum
-	 */
-	void parseBody();
-
 	/// Extracts a string
 	std::string getString();
 
-	/// Extracts the client's version
-	uint16_t getClientVersion();
+	/// Adler32 checksum
+	void doChecksum();
 
 	/// Extracts the XTEA key
 	crypto::Xtea getXtea();
 
 	/// Decrypts the message using the previously Xtea object returned by rsaDecrypt
-	void xteaDecrypt(crypto::Xtea& xtea);
+	void xteaDecrypt(const crypto::Xtea& xtea);
 
 	/// Decrypts the message using the given RSA object, calls handler(true) on success or
 	/// handler(false) on failure.
 	template <class Handler>
 	void rsaDecrypt(crypto::Rsa& rsa, Handler&& handler)
 	{
-		rsa.decrypt(peekRawChunck(128), 128, [this, handler]
+		rsa.decrypt(peekRawChunckAs<uint8_t>(128), 128, [this, handler]
 		(boost::system::error_condition& e, int newSize){
 			if(!e){
 				setRemainingSize(newSize);

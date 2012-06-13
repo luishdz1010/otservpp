@@ -2,7 +2,6 @@
 #define OTSERVPP_SQL_CONNECTION_HPP_
 
 #include <boost/asio/basic_io_object.hpp>
-#include "mysqlservice.h"
 
 namespace otservpp{ namespace sql{
 
@@ -21,17 +20,18 @@ namespace otservpp{ namespace sql{
 template <class SqlService>
 class BasicConnection : public boost::asio::basic_io_object<SqlService>{
 public:
-	typedef typename SqlService::implementation_type impl;
-	typedef typename impl::Id Id;
-	typedef typename impl::Handle Handle;
-	typedef typename impl::PreparedHandle PreparedHandle;
-	typedef typename impl::ResultSet ResultSet;
+	typedef SqlService Service;
+	typedef typename SqlService::implementation_type Impl;
+	typedef typename Impl::Id Id;
+	typedef typename Impl::Handle Handle;
+	typedef typename Impl::PreparedHandle PreparedHandle;
+	typedef typename Impl::ResultSet ResultSet;
 
 	template <class... T>
-	using Row = typename impl::template Row<T...>;
+	using Row = typename Impl::template Row<T...>;
 
 	template <class... T>
-	using RowSet = typename impl::template RowSet<T...>;
+	using RowSet = typename Impl::template RowSet<T...>;
 
 	/// Creates a new connection object that isn't connected to any database
 	BasicConnection(boost::asio::io_service& ioService) :

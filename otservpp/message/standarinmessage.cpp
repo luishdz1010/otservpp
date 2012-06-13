@@ -10,9 +10,9 @@ boost::asio::mutable_buffers_1 StandardInMessage::parseHeaderAndGetBodyBuffer()
 {
 	auto bodySize = getU16();
 
-	// 8 = adler + 1 xtea frame smallest packet, TODO if this correct?
+	// 8 = adler + 1 xtea frame smallest packet
 	if(bodySize < 8 || bodySize > STANDARD_IN_MESSAGE_MAX_BODY_SIZE)
-		throw std::runtime_error("invalid packet size, dropping");
+		throw PacketException();
 
 	setRemainingSize(bodySize);
 	return getBodyBuffer();
@@ -23,15 +23,13 @@ std::string StandardInMessage::getString()
 	return getStrChunck(getU16());
 }
 
-void StandardInMessage::parseBody()
+void StandardInMessage::doChecksum()
 {
-	skipBytes(4); // TODO implement adler32
-}
+	auto givenChecksum = getU32();
+	auto size = getRemainingSize();
 
-uint16_t StandardInMessage::getClientVersion()
-{
-	skipBytes(2); // OS && 0x01
-	return getU16();
+	if(givenChecksum != crypto::adler32(peekRawChunckAs<uint8_t>(size), size))
+		throw PacketException();
 }
 
 crypto::Xtea StandardInMessage::getXtea()
@@ -39,10 +37,15 @@ crypto::Xtea StandardInMessage::getXtea()
 	return {getU32(), getU32(), getU32(), getU32()};
 }
 
-void StandardInMessage::xteaDecrypt(crypto::Xtea& xtea)
+void StandardInMessage::xteaDecrypt(const crypto::Xtea& xtea)
 {
 	auto size = getRemainingSize();
-	xtea.decrypt(getRawChunckAs<uint32_t>(size), size);
+
+	if(size%8 != 0)
+		throw PacketException();
+
+	xtea.decrypt(peekRawChunckAs<uint32_t>(size), size);
+
 	setRemainingSize(getU16());
 }
 

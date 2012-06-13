@@ -73,7 +73,6 @@ void Service::destroy(ConnectionImpl& conn)
 	mysql_close(&conn.handle);
 }
 
-
 } /* namespace mysql */
 } /* namespace sql */
 } /* namespace otservpp */

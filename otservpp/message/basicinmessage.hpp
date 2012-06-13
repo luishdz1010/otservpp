@@ -6,10 +6,13 @@
 
 namespace otservpp {
 
+/// Indicates a failure while trying to overrun the message's buffer
+class PacketException : public std::exception{};
+
 /*! Simple in-message for use in advanced message classes
  * The buffer is statically allocated, since most protocols use small buffers size this is OK.
  */
-template <uint HEADER_SIZE, uint MAX_BODY_SIZE>
+template <unsigned int HEADER_SIZE, unsigned int MAX_BODY_SIZE>
 class BasicInMessage {
 public:
 	typedef std::array<uint8_t, HEADER_SIZE+MAX_BODY_SIZE> Buffer;
@@ -33,20 +36,20 @@ public:
 	}
 
 	/// Returns the total size of the message (header + body)
-	uint getSize() const
+	unsigned int getSize() const
 	{
 		return size;
 	}
 
 	/// Returns the remaining size of the message (size - readpos)
-	uint getRemainingSize() const
+	unsigned int getRemainingSize() const
 	{
 		assert(size >= pos);
 		return size-pos;
 	}
 
 	/// Returns true if getRemainingSize() >= bytesRequired
-	bool isAvailable(uint bytesRequired) const
+	bool isAvailable(unsigned int bytesRequired) const
 	{
 		return pos+bytesRequired <= size;
 	}
@@ -72,17 +75,17 @@ public:
 		return getNumber<uint64_t>();
 	}
 
-	uint8_t* getRawChunck(uint bytes)
+	uint8_t* getRawChunck(unsigned int bytes)
 	{
 		return getRawChunckAs<uint8_t>(bytes);
 	}
 
-	std::string getStrChunck(uint bytes)
+	std::string getStrChunck(unsigned int bytes)
 	{
 		return std::string(getRawChunckAs<char>(bytes), bytes);
 	}
 
-	void skipBytes(uint delta)
+	void skipBytes(unsigned int delta)
 	{
 		movePos(delta);
 	}
@@ -101,32 +104,29 @@ protected:
 	}
 
 	template <class T>
-	T* getRawChunckAs(uint bytes)
+	T* getRawChunckAs(unsigned int bytes)
 	{
 		movePos(bytes);
 		return reinterpret_cast<T*>(buffer.data() + (pos-bytes));
 	}
 
-	void movePos(uint bytes)
+	void movePos(unsigned int bytes)
 	{
 		if((pos+=bytes) > size)
-			throwBufferException();
+			throw PacketException();
 	}
 
-	uint8_t* peekRawChunck(uint bytes)
+	template<class T>
+	typename std::enable_if<std::is_integral<T>::value, T*>::type
+	peekRawChunckAs(unsigned int bytes)
 	{
 		if(pos+bytes > size)
-			throwBufferException();
+			throw PacketException();
 		else
-			return buffer.data() + pos;
+			return reinterpret_cast<T*>(buffer.data() + pos);
 	}
 
-	void throwBufferException() const
-	{
-		throw std::out_of_range("attempt to overrun the incoming message buffer");
-	}
-
-	void setRemainingSize(uint bytes)
+	void setRemainingSize(unsigned int bytes)
 	{
 		assert(pos+bytes <= MAX_BODY_SIZE);
 		size = pos+bytes;
@@ -134,8 +134,8 @@ protected:
 
 private:
 	Buffer buffer;
-	uint pos;
-	uint size;
+	unsigned int pos;
+	unsigned int size;
 };
 
 } /* namespace otservpp */

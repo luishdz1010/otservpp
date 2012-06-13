@@ -1,87 +1,86 @@
 #include "accountloginprotocol.h"
-#include "../hook/loginprotocolhooks.hpp"
-
+#include <boost/lexical_cast.hpp>
 
 namespace otservpp {
 
-using namespace hook;
-
-void AccountLoginProtocol::handleFirstMessage(StandardInMessage& msg)
+void AccountLoginProtocol::onFirstMessage(StandardInMessage& msg)
 {
 	connection->stopReceiving();
-}
-	/*msg.skipBytes(1); // protocolid
-	auto version = msg.getClientVersion();
-	msg.skipBytes(12);
 
-	msg.rsaDecrypt(rsa, [this, &msg](bool success){
-		if(success){
-			auto xtea = msg.getXtea();
-			auto user = msg.getString();
-			auto pass = msg.getString();
-			int x = 12;
-		} else{
-			throw std::runtime_error("error_");
-		}
-	});
+	LoginError e;
+	if(!validateIpAndVersion(msg, e))
+		return closeWithError(e);
 
+	msg.skipBytes(12); // files checksum
 
-	p.getPeerState(connection->getPeerAddress(), [this, &msg](PeerState s){
-		switch(s){
-		case PeerState::Ok:
-			break;
-		case PeerState::Banned:
-			return closeWithError(AccountLoginError::IpBanned);
-		case PeerState::Disabled:
-			return closeWithError(AccountLoginError::IpDisabled);
-		}
+	auto sthis = shared_from_this();
 
-		msg.skipBytes(1); // protocol id
-
-		if(p.validVersion(getClientVersion(msg)))
-			return closeWithError(AccountLoginError::BadClientVersion);
-
-		decryptRSA(msg); // ignore xtea key?
-
-		auto accName = msg.getString();
-
-		if(accName.empty())
-			return closeWithError(AccountLoginError::BadAccountName);
-
-		p.loadAccount(accName, [this, &msg](const AccountPtr& account){
-			if(!account || !account->passwordsMatch(msg.getString()))
-				return closeWithError(AccountLoginError::BadPassword);
-
-			StandarOutMessage out;
-			auto response = p.onAccountLogin(ip, account);
-
-			out.addByte(Motd);
-			out << std::get<AccountLoginSuccedResult::Motd>(response);
-
-			out.addByte(CharacterList);
-			for(auto& it : std::get<AccountLoginSuccedResult::CharacterList>(response)){
-				out << std::get<CharacterListItem::Name>(it)
-					<< std::get<CharacterListItem::World>(it)
-					<< std::get<CharacterListItem::Ip>(it)
-					<< std::get<CharacterListItem::Port>(it);
-			}
-
-			connection->sendAndStop(out);
+	decryptMessageAndSetXta(msg, [this, &msg, sthis]{
+		loadAccount(msg.getString(), msg.getString(),
+		[this, sthis](LoginError e, AccountPtr account){
+			if(e != LoginError::NoError)
+				closeWithError(e);
+			else
+				sendCharacterList(account);
 		});
 	});
 }
 
-void LoginProtocol::closeWithError(AccountLoginError error, const AccountPtr& acc)
+void AccountLoginProtocol::sendCharacterList(AccountPtr& account)
 {
-	p.dispatcher.callLater([=]() {
-		StandarOutMessage msg;
-		auto r = p.onAccountLoginError(getConnection()->getPeerAddress().to_string(), error, acc);
+	SucceedHookResult res;
 
-		msg.addByte(Error);
-		msg << std::get<OnAccountLoginError::Message>(r);
+	try{
+		res = impl.succeedHook(connection->getPeerAddress()->to_string(), account);
+	} catch(std::exception& e){
+		LOG(ERROR) << e.message()  << "\nwhile executing " << impl.succeedHook.getName()
+					<< droppingLogInfo();
+		connection->stop();
+		return; // here we could add some backup code, in wish list though
+	}
 
-		getConnection()->sendAndClose(msg);
-	});
-}*/
+	using namespace std;
+
+	auto& charList = get<CharacterList>(res);
+	auto size = charList.size();
+
+	if(size > UINT8_MAX){
+		LOG(ERROR) << "invalid character list size(" << size << ") returned by "
+					<< impl.succeedHook.getName() << droppingLogInfo();
+		connection->stop();
+
+	} else {
+		StandardOutMessage out{SucceedByte};
+
+		out << boost::lexical_cast<string>(get<MotdId>(res)) + "\n" + get<Motd>(res);
+
+		out.addByte(CharacterListByte);
+		out.addByte((uint8_t)size);
+		for(auto& it : charList){
+			out << get<CharacterName>(it)
+				<< get<CharacterWorld>(it)
+				<< get<CharacterIp>(it)
+				<< get<CharacterPort>(it);
+		}
+
+		sendAndStop(out);
+	}
+}
+
+void AccountLoginProtocol::closeWithError(LoginError error)
+{
+	std::string errorString;
+
+	try{
+		errorString = impl.errorHook(error, connection->getPeerAddress().to_string());
+	} catch(std::exception& e){
+		LOG(ERROR) << e.message() << "\nwhile executing " << impl.errorHook.getName()
+					<< droppingLogInfo();
+		connection->stop();
+		return;
+	}
+
+	sendAndStop({ErrorByte, errorString});
+}
 
 }
