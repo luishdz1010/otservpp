@@ -1,4 +1,5 @@
 #include "standardoutmessage.h"
+#include "../crypto.h"
 
 namespace otservpp {
 
@@ -15,7 +16,7 @@ void StandardOutMessage::xteaEncrypt(const crypto::Xtea& xtea)
 
 void StandardOutMessage::encode()
 {
-	addPrefix(crypto::adler32(getBufferAs<uint8_t>(), getSize()));
+	addPrefix(crypto::adler32(getBufferAs<uint8_t>(), (int32_t)getSize()));
 	addPrefix(getSize());
 }
 

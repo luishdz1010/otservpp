@@ -2,39 +2,45 @@
 #define OTSERVPP_STANDARDOUTMESSAGE_H_
 
 #include "basicoutmessage.hpp"
+#include "../forwarddcl.hpp"
 
 namespace otservpp {
 
-enum : uint8_t{
+enum{
 	/// RawPacketLen(2) + Adler32(4) + DecryptedPacketLen(2)
-	STANDARD_OUT_MESSAGE_PREFIX_SIZE = 8
+	STANDARD_OUT_MESSAGE_PREFIX_SIZE = 8,
+	STANDARD_OUT_MESSAGE_MAX_SIZE = 20000,
 };
 
 class StandardOutMessage :
-	public BasicOutMessage<StandardOutMessage, STANDARD_OUT_MESSAGE_PREFIX_SIZE>
+	public BasicOutMessage<StandardOutMessage,
+		STANDARD_OUT_MESSAGE_PREFIX_SIZE, STANDARD_OUT_MESSAGE_MAX_SIZE>
 {
 public:
+	typedef BasicOutMessage<StandardOutMessage,
+			STANDARD_OUT_MESSAGE_PREFIX_SIZE, STANDARD_OUT_MESSAGE_MAX_SIZE> BasicOutMsg;
+
 	///  Created a StandardOutMessage with a reasonable initial buffer
 	StandardOutMessage() :
-		BasicOutMessage(1024)
+		BasicOutMsg(1024)
 	{}
 
 	/// Shorthand for \code StandardOutMessage msg; msg.addByte(packetType); \endcode
-	StandardOutMessage(uint8_t packetType) :
-		BasicOutMessage(1024)
+	explicit StandardOutMessage(uint8_t packetType) :
+		BasicOutMsg(1024)
 	{
 		add(packetType);
 	}
 
 	/// Creates a StandarOutMessage with a minimal buffer required to store the passed args
-	template <class Arg, class... Args>
+	/*template <class Arg, class... Args>
 	StandardOutMessage(uint8_t packetType, Arg&& arg, Args&&... args) :
 		BasicOutMessage(1 + calculateSize(args...))
 	{
 		add(packetType);
 		add(std::forward<Arg>(arg));
 		add(std::forward<Args>(args))...;
-	}
+	}*/
 
 	/// Prepends the packet size information, after calling this function no more data should be
 	/// added to the message
@@ -70,15 +76,15 @@ private:
 	}
 
 	template <class T>
-	typename std::enable_if<std::is_integral<T>::value>::type
+	typename std::enable_if<std::is_integral<T>::value, uint16_t>::type
 	calcOneSize(T& arg)
 	{
-		size += sizeof(T);
+		return (uint16_t)sizeof(T);
 	}
 
-	void calcOneSize(std::string& str)
+	uint16_t calcOneSize(std::string& str)
 	{
-		return str.size();
+		return (uint16_t)str.size();
 	}
 };
 

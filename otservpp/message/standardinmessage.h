@@ -41,8 +41,8 @@ public:
 	template <class Handler>
 	void rsaDecrypt(crypto::Rsa& rsa, Handler&& handler)
 	{
-		rsa.decrypt(peekRawChunckAs<uint8_t>(128), 128, [this, handler]
-		(boost::system::error_condition& e, int newSize){
+		rsa.decrypt(peekRawChunckAs<uint8_t>(128), 128,
+		[this, handler](boost::system::error_condition& e, int newSize) mutable{
 			if(!e){
 				setRemainingSize(newSize);
 				handler(getByte() == 0);
@@ -50,6 +50,14 @@ public:
 				handler(false);
 			}
 		});
+	}
+
+	/// Used for logging proposes
+	template <class T>
+	friend std::basic_ostream<T>& operator<<(std::basic_ostream<T>& os, StandardInMessage& msg)
+	{
+		os << "StandardInMessage[size=" << msg.getSize() << "]";
+		return os;
 	}
 };
 

@@ -40,7 +40,7 @@ public:
 	template <class Func>
 	void runSync(Func&& alg)
 	{
-		strand.dispatch([=]{ alg(); });
+		strand.dispatch([=]() mutable{ alg(); });
 	}
 
 	void shutdown_service() override {}
@@ -80,7 +80,7 @@ public:
 	template <class Handler>
 	void decrypt(uint8_t* buffer, std::size_t length, Handler&& handler)
 	{
-		svc.runSync([=](){
+		svc.runSync([=]() mutable{
 			boost::system::error_condition e;
 			int newLen = decrypt(buffer, length, e);
 			handler(e, newLen);

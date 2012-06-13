@@ -58,6 +58,11 @@ class Account;
 
 typedef std::unique_ptr<Account> AccountPtr;
 
+namespace crypto{
+class Xtea;
+class Rsa;
+}
+
 } /* namespace otservpp */
 
 #endif // OTSERVPP_FORWARDDCL_HPP_

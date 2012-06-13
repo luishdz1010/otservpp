@@ -17,7 +17,10 @@ class AccountLoginProtocol :
 	public std::enable_shared_from_this<AccountLoginProtocol>
 {
 public:
-	typedef hook::AccountLoginSucceedResult SucceedHookResult;
+	typedef BasicLoginProtocol<AccountLoginProtocol> LoginProtocol;
+	typedef LoginProtocol::ConnectionPtrType ConnectionPtrType;
+	typedef hook::AccountLoginSucceedResult::type SucceedHookResult;
+	typedef hook::AccountLoginSucceedResult SucceedHookR;
 
 	/// Outgoing packet headers
 	enum : uint8_t{
@@ -28,21 +31,21 @@ public:
 
 	/// Succeed Hook tuple indexes
 	enum{
-		MotdId = SucceedHookResult::MotdId,
-		Motd = SucceedHookResult::Motd,
-		CharacterList = SucceedHookResult::CharacterList,
-		PremiumEnd = SucceedHookResult::PremiumEnd,
+		MotdId = SucceedHookR::MotdId,
+		Motd = SucceedHookR::Motd,
+		CharacterList = SucceedHookR::CharacterList,
+		PremiumEnd = SucceedHookR::PremiumEnd,
 
-		CharacterName = SucceedHookResult::CharacterName,
-		CharacterWorld = SucceedHookResult::CharacterWorld,
-		CharacterIp = SucceedHookResult::CharacterIp,
-		CharacterPort = SucceedHookResult::CharacterPort
+		CharacterName = SucceedHookR::CharacterName,
+		CharacterWorld = SucceedHookR::CharacterWorld,
+		CharacterIp = SucceedHookR::CharacterIp,
+		CharacterPort = SucceedHookR::CharacterPort
 	};
 
 	AccountLoginProtocol(const ConnectionPtrType& conn,
 			BasicLoginProtocolData& d1,
 			AccountLoginProtocolData& d2) :
-		BasicLoginProtocol(conn, d1),
+		LoginProtocol(conn, d1),
 		impl(d2)
 	{}
 
@@ -54,6 +57,7 @@ public:
 	void onFirstMessage(StandardInMessage& msg);
 
 private:
+
 	/// Sends the character list provided by hook::AccountLoginSucceed after a successful
 	/// login attempt
 	void sendCharacterList(AccountPtr& account);

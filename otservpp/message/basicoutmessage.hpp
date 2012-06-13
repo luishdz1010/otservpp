@@ -4,17 +4,18 @@
 #include <vector>
 #include <string>
 #include <cstring>
+#include <cassert>
 #include <boost/asio/buffer.hpp>
 
 namespace otservpp{
 
-template <class Derived, uint8_t MAX_PREFIX_SIZE>
+template <class Derived, int MAX_PREFIX_SIZE, int MAX_BUFFER_SIZE>
 class BasicOutMessage{
 public:
 	typedef std::vector<uint8_t> BufferType;
 
-	BasicOutMessage(unsigned int startSize) :
-		buffer(MAX_PREFIX_SIZE + startSize),
+	BasicOutMessage(unsigned int capacity) :
+		buffer(MAX_PREFIX_SIZE + capacity),
 		prefixPos(MAX_PREFIX_SIZE)
 	{
 		buffer.resize(MAX_PREFIX_SIZE);
@@ -23,14 +24,14 @@ public:
 	BasicOutMessage(const BasicOutMessage&) = default;
 	BasicOutMessage(BasicOutMessage&&) = default;
 
-	boost::asio::mutable_buffers_1 getBuffer()
+	boost::asio::const_buffers_1 getBuffer() const
 	{
 		return boost::asio::buffer(buffer.data()+prefixPos, buffer.size()-prefixPos);
 	}
 
 	std::size_t getSize()
 	{
-		assert(buffer.size() >= prefixPos);
+		assert((int)buffer.size() >= prefixPos);
 		return buffer.size()-prefixPos;
 	}
 
@@ -38,8 +39,8 @@ public:
 	typename std::enable_if<std::is_integral<T>::value>::type
 	addPrefix(T v)
 	{
-		*reinterpret_cast<T*>(&buffer.at(prefixPos-sizeof(T))) = v;
-		prefixPos -= sizeof(T);
+		assert(prefixPos - sizeof(T) >= 0);
+		*reinterpret_cast<T*>(&buffer[prefixPos-=sizeof(T)]) = v;
 	}
 
 	void addByte(uint8_t v)
@@ -77,14 +78,24 @@ public:
 		add(str);
 	}
 
-	void addString(const char* str, uint16_t strSize = strlen(str))
+	void addString(const char* str)
+	{
+		add(str);
+	}
+
+	void addString(const char* str, uint16_t strSize)
 	{
 		add(str, strSize);
 	}
 
-	void addRaw(const char* raw, std::size_t size = strlen(str))
+	void addRaw(const char* raw)
 	{
-		buffer.insert(buffer.end(), raw, raw+size);
+		addRaw(raw, strlen(raw));
+	}
+
+	void addRaw(const char* raw, std::size_t size)
+	{
+		buffer.insert(buffer.end(), (const uint8_t*)raw, (const uint8_t*)raw+size);
 	}
 
 	Derived& operator<<(uint8_t v)
@@ -136,7 +147,7 @@ protected:
 	typename std::enable_if<std::is_arithmetic<T>::value>::type
 	add(T value)
 	{
-		int pos = buffer.size();
+		auto pos = buffer.size();
 		buffer.resize(pos+sizeof(T));
 		*reinterpret_cast<T*>(&buffer[pos]) = value;
 	}
@@ -149,11 +160,16 @@ protected:
 		buffer.insert(buffer.end(), str.cbegin(), str.cend());
 	}
 
-	void add(const char* str, uint16_t strSize = strlen(str))
+	void add(const char* str, uint16_t strSize)
 	{
 		buffer.reserve(2+strSize);
 		add(strSize);
 		buffer.insert(buffer.end(), str, str+strSize);
+	}
+
+	void add(const char* str)
+	{
+		add(str, strlen(str));
 	}
 
 	void addPadding(std::size_t count, uint8_t value)
@@ -163,7 +179,7 @@ protected:
 
 	template <class T>
 	typename std::enable_if<std::is_integral<T>::value, T*>::type
-	getBufferAs(T value)
+	getBufferAs()
 	{
 		return reinterpret_cast<T*>(&buffer[prefixPos]);
 	}
@@ -175,7 +191,7 @@ private:
 	}
 
 	BufferType buffer;
-	uint8_t prefixPos;
+	int prefixPos;
 };
 
 } /* namespace otservpp */

@@ -14,19 +14,15 @@ namespace otservpp{
  * The connection class takes care of managing the underlying message transmission from and to
  * a remote peer. This is independent from the message interpreter (i.e. protocol) used.
  *
- * The underlying protocol can be modified at any time during the program execution, this however
- * requires having an abstract Protocol base class. While this isn't common operation, it allow
- * us to code a far more natural design regarding the use of protocols and connections. For
- * instance, we can separate the login-queue code in LoginQueueProtocol from the actual in-game
- * character manipulation in GameProtocol, we can also
+ * The underlying protocol can be modified during runtime if certain conditions can be meet,
+ * however the relationship between a protocol an a connection is mostly fixed.
  *
- * The ConnectionT template parameter is used as argument in ConnectionTraits to configure the
- * types and behavior of the Connection. See ConnectionTraits for details.
+ * The Protocol template parameter is used as argument in ProtocolTraits to configure the
+ * types and behavior of the Connection. See ProtocolTraits for details.
  *
  * This class is designed to be thread safe (i.e multiple threads can send messages
  * through the same instance), but only the connection's thread will be receiving messages.
- * Even after calling Connection::stop() the connection might still call protocol functions.
- * \see Protocol ConnectionTraits
+ * \see Protocol ProtocolTraits
  */
 template <class Protocol>
 class Connection : public std::enable_shared_from_this<Connection<Protocol> > {
@@ -190,7 +186,7 @@ public:
 	template <class Message>
 	void send(Message&& msg)
 	{
-		trySendOrEnqueueThen(std::forward<Message>(msg), [this]{ keepSending(); });
+		trySendOrEnqueueThen(std::forward<Message>(msg), [this]{ this->keepSending(); });
 	}
 
 	/// Same as send(Message&& msg) but stops the connection when finished
@@ -198,7 +194,7 @@ public:
 	template <class Message>
 	void sendAndStop(Message&& msg)
 	{
-		trySendOrEnqueueThen(std::forward<Message>(msg), [this]{ stop(); });
+		trySendOrEnqueueThen(std::forward<Message>(msg), [this]{ this->stop(); });
 	}
 
 	std::string logInfo()
@@ -212,11 +208,6 @@ public:
 	std::string droppingLogInfo()
 	{
 		return logInfo() + ", dropping connection";
-	}
-
-	std::string handlePacketException()
-	{
-
 	}
 
 	Connection(Connection&) = delete;
@@ -253,24 +244,23 @@ private:
 			try{
 				this->asyncRead(inMsg.parseHeaderAndGetBodyBuffer(), [=](){
 					impl->readTimer.cancel();
-					inMsg.parseBody();
 
-					//DVLOG(1) << "handling message " << inMsg << this->logInfo();
+					DVLOG(1) << "dispatching " << inMsg << this->logInfo();
 
 					try{
 						ProtocolHandler::sendInMsg(this);
 					}catch(std::exception& e){
-						LOG(ERROR) << "exception caught during "
-								<< (protocol? protocol->getName() : "no protocol")
-								<< " execution, dropping connection. What: " << e.what();
-						return this->stop();
+						LOG(ERROR) << "unexpected exception caught" << this->droppingLogInfo()
+									<< ". What: " << e.what();
+						return this->abort();
 					}
 
 					if(this->isReceiving())
 						this->parseIncomingMessage<ProtocolMessageHandler>();
 				});
 			} catch(std::exception&){
-				LOG(INFO) << "couldn't obtain the packet header"
+				LOG(INFO) << "invalid packet header" << droppingLogInfo();
+				this->abort();
 			}
 		});
 	}
@@ -279,8 +269,8 @@ private:
 	template <class Buffer, class Lambda>
 	void asyncRead(Buffer&& buffer, Lambda&& body)
 	{
-		boost::asio::async_read(impl->peer, std::forward<Buffer>(buffer),
-		impl->strand.wrap([this, body](const SystemErrorCode& e, std::size_t bytesRead){
+		boost::asio::async_read(impl->peer, std::forward<Buffer>(buffer), impl->strand.wrap(
+		[this, body](const boost::system::error_code& e, std::size_t bytesRead){
 			if(!e){
 				if(!this->isReceiving()) return;
 
@@ -304,7 +294,7 @@ private:
 
 	void waitOnReadTimer()
 	{
-		impl->readTimer.async_wait(impl->strand.wrap([this](const SystemErrorCode &e){
+		impl->readTimer.async_wait(impl->strand.wrap([this](const boost::system::error_code &e){
 			DLOG_IF(ERROR, e != boost::asio::error::operation_aborted)
 				<< "read operation timedout after " << ReadTimeOut << "s" << this->logInfo();
 			this->abort(e);
@@ -320,7 +310,8 @@ private:
 
 	void waitOnWriteTimer()
 	{
-		impl->writeTimer.async_wait(impl->strand.wrap([this](const SystemErrorCode &e){
+		impl->writeTimer.async_wait(impl->strand.wrap(
+		[this](const boost::system::error_code &e){
 			DLOG_IF(ERROR, e != boost::asio::error::operation_aborted)
 				<< "write operation timedout after " << WriteTimeOut << "s" << this->logInfo();
 			this->abort(e);
@@ -328,29 +319,33 @@ private:
 	}
 
 	/// Called whenever an IO error or timeout occurs
-	void abort(const SystemErrorCode& e = SystemErrorCode())
+	void abort(const boost::system::error_code& e)
 	{
 		// timer.cancel() ends with operation_aborted, so we can reuse this function for timers
-		if(e != boost::asio::error::operation_aborted){
-			protocol->connectionLost();
-			stop();
-		}
+		if(e != boost::asio::error::operation_aborted)
+			abort();
+	}
+
+	void abort()
+	{
+		protocol->connectionLost();
+		stop();
 	}
 
 	template <class Message, class AfterSend>
 	void trySendOrEnqueueThen(Message&& msg, AfterSend&& then)
 	{
-		impl->strand.dispatch([=]{
-			if(!isSendind()) return;
+		impl->strand.dispatch([=]() mutable{
+			if(!this->isSendind()) return;
 
-			DVLOG(1) << "queuing message " << outMsgQueue.front() << logInfo();
+			//DVLOG(1) << "queuing message " << outMsgQueue.front() << logInfo();
 
 			bool shallSend = outMsgQueue.empty();
 
 			outMsgQueue.emplace_back(std::forward<Message>(msg));
 
 			if(shallSend)
-				doSend(then);
+				this->doSend(then);
 		});
 	}
 
@@ -361,11 +356,20 @@ private:
 		updateWriteTimer();
 
 		auto sthis = shared_from_this();
+		auto& msg = outMsgQueue.front();
 
-		boost::asio::async_write(impl->peer, outMsgQueue.front().getBuffer(),
-		impl->strand.wrap([=](const SystemErrorCode& e, std::size_t bytesWritten) mutable {
+		try{
+			msg.encode();
+		} catch(std::exception&){
+			LOG(INFO) << "outgoing message couldn't be encoded" << droppingLogInfo();
+			return this->abort();
+		}
+
+		boost::asio::async_write(impl->peer, msg.getBuffer(),
+		impl->strand.wrap(
+		[this, sthis, then](const boost::system::error_code& e, std::size_t bytesWritten) mutable{
 			if(!e){
-				DVLOG(1) << bytesWritten << " bytes written" << logInfo();
+				DVLOG(1) << bytesWritten << " bytes written" << this->logInfo();
 
 				outMsgQueue.pop_front();
 
@@ -373,7 +377,7 @@ private:
 
 			} else {
 				DLOG_IF(ERROR, e != boost::asio::error::operation_aborted) << "write error "
-					<< e << " after " << bytesWritten << " bytes written" << logInfo();
+					<< e << " after " << bytesWritten << " bytes written" << this->logInfo();
 				this->abort(e);
 			}
 		}));
@@ -387,14 +391,10 @@ private:
 			impl->writeTimer.cancel();
 	}
 
-	// protocol dependent types
 	IncomingMessage inMsg;
 	std::deque<OutgoingMessage> outMsgQueue;
 	ProtocolPtr protocol;
-	//std::atomic_int closeStatus {0};
-
 	std::unique_ptr<ConnectionImpl> impl;
-
 	char closeStatus {0};
 };
 

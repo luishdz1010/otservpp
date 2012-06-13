@@ -72,7 +72,7 @@ uint32_t adler32(uint8_t* data, int32_t len)
 		b %= 65521;
 	}
 
-	return (b << 16) | a;
+	return (uint32_t)(b << 16) | a;
 }
 
 Xtea::Xtea(uint32_t k0, uint32_t k1, uint32_t k2, uint32_t k3) :

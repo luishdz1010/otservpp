@@ -63,6 +63,7 @@ private:
  * The physical connection can be interrupted at any time so we rely on the Connection class to
  * modify its ID whenever that happens, after that we only need to re-prepare the statement.
  */
+#if 0
 class PreparedQuery{
 public:
 	template <class... Values>
@@ -109,7 +110,7 @@ public:
 				conn->prepareQuery(stmtStr, [this, control, conn]
 				(const boost::system::error_code& e, Connection::PreparedHandle stmt) mutable{
 					if(e){
-						control->handler(e, ResultSet::emptySet());
+						//control->handler(e, ResultSet::emptySet());
 					} else {
 						mutex.lock();
 						stmtMap.insert(std::make_pair(conn->getId(), stmt));
@@ -173,6 +174,7 @@ private:
 	const std::string stmtStr;
 	ConnectionPool& connPool;
 };
+#endif
 
 
 class BatchQuery{

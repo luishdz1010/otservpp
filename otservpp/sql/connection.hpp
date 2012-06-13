@@ -2,6 +2,7 @@
 #define OTSERVPP_SQL_CONNECTION_HPP_
 
 #include <boost/asio/basic_io_object.hpp>
+#include <boost/asio/ip/tcp.hpp>
 
 namespace otservpp{ namespace sql{
 

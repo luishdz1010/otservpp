@@ -1,6 +1,7 @@
 #ifndef OTSERVPP_SCRIPT_HOOK_HOOK_HPP_
 #define OTSERVPP_SCRIPT_HOOK_HOOK_HPP_
 
+#include <glog/logging.h>
 #include <luabind/function.hpp>
 #include <luabind/class_info.hpp>
 #include "hookdcl.hpp"

@@ -31,9 +31,9 @@ void AccountLoginProtocol::sendCharacterList(AccountPtr& account)
 	SucceedHookResult res;
 
 	try{
-		res = impl.succeedHook(connection->getPeerAddress()->to_string(), account);
+		res = impl.succeedHook(connection->getPeerAddress().to_string(), account);
 	} catch(std::exception& e){
-		LOG(ERROR) << e.message()  << "\nwhile executing " << impl.succeedHook.getName()
+		LOG(ERROR) << e.what()  << "\nwhile executing " << impl.succeedHook.getName()
 					<< droppingLogInfo();
 		connection->stop();
 		return; // here we could add some backup code, in wish list though
@@ -74,13 +74,13 @@ void AccountLoginProtocol::closeWithError(LoginError error)
 	try{
 		errorString = impl.errorHook(error, connection->getPeerAddress().to_string());
 	} catch(std::exception& e){
-		LOG(ERROR) << e.message() << "\nwhile executing " << impl.errorHook.getName()
+		LOG(ERROR) << e.what() << "\nwhile executing " << impl.errorHook.getName()
 					<< droppingLogInfo();
 		connection->stop();
 		return;
 	}
 
-	sendAndStop({ErrorByte, errorString});
+	//sendAndStop({ErrorByte, errorString});
 }
 
 }

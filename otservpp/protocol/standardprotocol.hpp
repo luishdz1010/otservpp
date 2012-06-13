@@ -3,7 +3,7 @@
 
 #include "basicprotocol.hpp"
 #include "../message/standardinmessage.h"
-#include "../message/standaroutmessage.h"
+#include "../message/standardoutmessage.h"
 
 namespace otservpp{
 
@@ -14,10 +14,11 @@ namespace otservpp{
 template <class Protocol>
 class StandardProtocol : public BasicProtocol<Protocol>{
 public:
-	typedef typename BasicProtocol<Protocol>::ConnectionPtrType ConnectionPtrType;
+	typedef BasicProtocol<Protocol> BaseProtocol;
+	typedef typename BaseProtocol::ConnectionPtrType ConnectionPtrType;
 
 	StandardProtocol(const ConnectionPtrType& conn) :
-		BasicProtocol(conn)
+		BaseProtocol(conn)
 	{}
 
 	void handleFirstMessage(StandardInMessage& msg)
@@ -42,36 +43,11 @@ public:
 	}
 
 protected:
+	using BaseProtocol::handlePacketException;
+	using BaseProtocol::wrapHandler;
+	using BaseProtocol::connection;
+
 	~StandardProtocol() = default;
-
-	template <class Handler>
-	struct WrappedHandler{
-		Handler h;
-		StandardProtocol* protocol;
-
-		template <class... Args>
-		void operator()(Args&&... args)
-		{
-			if(protocol->connection->isAlive()){
-				try{
-					h(std::forward<Handler>(args));
-				} catch(PacketException&){
-					handlePacketException();
-				} catch(std::exception& e){
-					LOG(ERROR) << "exception caugh during normal proccessing"
-							<< droppingLogInfo() << ". What: " << e.what();
-				}
-			} else {
-				connection->stop();
-			}
-		}
-	};
-
-	template <class Handler>
-	WrappedHandler<Handler> wrapHandler(Handler&& handler)
-	{
-		return {std::forward<Handler>(handler), this};
-	}
 
 	/// Placeholder implementation for one-message protocols, should never be called though
 	void onMessage(StandardInMessage& msg)
@@ -106,7 +82,7 @@ protected:
 	{
 		msg.addHeader();
 		msg.xteaEncrypt(xtea);
-		connection->sendAndClose(msg);
+		connection->sendAndStop(msg);
 	}
 
 private:

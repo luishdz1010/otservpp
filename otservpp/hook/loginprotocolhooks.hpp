@@ -30,7 +30,7 @@ struct AccountLoginSucceedResult{
  * The return value expected is self-explanatory, see the enums in AccountLoginSucceedResult.
  */
 OTSERVPP_DEF_HOOK(AccountLoginSucceed,
-		AccountLoginSuccedResult::type(const std::string&, const AccountPtr&));
+		AccountLoginSucceedResult::type(const std::string&, const AccountPtr&));
 
 /*! Called from AccountLoginProtocol whenever a login attempt fails.
  * \li The first parameter is the error that prevents the login
