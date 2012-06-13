@@ -20,7 +20,7 @@ interval = callEvery(3, function()
 end)
 
 -- volalite interval precision 
-callAfter(37, function()
+callAfter(40, function()
 	assert(count == 10)
 end)
 
